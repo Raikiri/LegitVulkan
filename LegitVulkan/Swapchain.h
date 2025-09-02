@@ -11,23 +11,25 @@ namespace legit
     {
       return extent;
     }
-    std::vector<ImageView *> GetImageViews()
+    size_t GetImagesCount()
     {
-      std::vector<ImageView *> resImageViews;
-      for (auto &image : this->images)
-        resImageViews.push_back(image.imageView.get());
-      return resImageViews;
+      return this->images.size();
     }
-    vk::ResultValue<uint32_t> AcquireNextImage(vk::Semaphore semaphore)
+    ImageView* GetImageView(size_t imageIndex)
     {
-      return logicalDevice.acquireNextImageKHR(swapchain.get(), std::numeric_limits<uint64_t>::max(), semaphore, nullptr);
+      assert(imageIndex < this->images.size());
+      return this->images[imageIndex].imageView.get();
+    }
+    vk::ResultValue<uint32_t> AcquireNextImage(vk::Semaphore signalSemaphore)
+    {
+      return logicalDevice.acquireNextImageKHR(swapchain.get(), std::numeric_limits<uint64_t>::max(), signalSemaphore, nullptr);
     }
     vk::SwapchainKHR GetHandle()
     {
       return swapchain.get();
     }
   private:
-    Swapchain(vk::Instance instance, vk::PhysicalDevice physicalDevice, vk::Device logicalDevice, WindowDesc windowDesc, glm::uvec2 defaultSize, uint32_t imagesCount, QueueFamilyIndices queueFamilyIndices, vk::PresentModeKHR preferredMode)
+    Swapchain(vk::Instance instance, vk::PhysicalDevice physicalDevice, vk::Device logicalDevice, WindowDesc windowDesc, glm::uvec2 defaultSize, uint32_t desiredImagesCount, QueueFamilyIndices queueFamilyIndices, vk::PresentModeKHR preferredMode)
     {
       this->logicalDevice = logicalDevice;
       this->surface = legit::CreateSurface(instance, windowDesc);
@@ -41,7 +43,7 @@ namespace legit
       this->presentMode = FindSwapchainPresentMode(surfaceDetails.presentModes, preferredMode);
       this->extent = FindSwapchainExtent(surfaceDetails.capabilities, vk::Extent2D(defaultSize.x, defaultSize.y));
 
-      uint32_t imageCount = std::max(surfaceDetails.capabilities.minImageCount, imagesCount);
+      uint32_t imageCount = std::max(surfaceDetails.capabilities.minImageCount, desiredImagesCount);
       if (surfaceDetails.capabilities.maxImageCount > 0 && imageCount > surfaceDetails.capabilities.maxImageCount)
         imageCount = surfaceDetails.capabilities.maxImageCount;
 

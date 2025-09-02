@@ -56,6 +56,22 @@ namespace legit
       }
     }
 
+    void PurgeUnused()
+    {
+      std::vector<ImageKey> toRemoveKeys;
+      for (auto& cacheEntry : imageCache)
+      {
+        assert(cacheEntry.second.usedCount <= cacheEntry.second.images.size());
+        cacheEntry.second.images.resize(cacheEntry.second.usedCount);
+        if (cacheEntry.second.usedCount == 0)
+          toRemoveKeys.push_back(cacheEntry.first);
+      }
+      for (const auto& toRemoveKey: toRemoveKeys)
+      {
+        imageCache.erase(toRemoveKey);
+      }
+    }
+
     legit::ImageData *GetImage(ImageKey imageKey)
     {
       auto &cacheEntry = imageCache[imageKey];
@@ -144,6 +160,22 @@ namespace legit
       for (auto &cacheEntry : bufferCache)
       {
         cacheEntry.second.usedCount = 0;
+      }
+    }
+
+    void PurgeUnused()
+    {
+      std::vector<BufferKey> toRemoveKeys;
+      for (auto& cacheEntry : bufferCache)
+      {
+        assert(cacheEntry.second.usedCount <= cacheEntry.second.buffers.size());
+        cacheEntry.second.buffers.resize(cacheEntry.second.usedCount);
+        if (cacheEntry.second.usedCount == 0)
+          toRemoveKeys.push_back(cacheEntry.first);
+      }
+      for (const auto& toRemoveKey : toRemoveKeys)
+      {
+        bufferCache.erase(toRemoveKey);
       }
     }
 
@@ -1460,6 +1492,8 @@ namespace legit
           }break;
         }
       }
+
+      imageCache.PurgeUnused();
     }
     legit::ImageData *GetResolvedImage(size_t taskIndex, ImageProxyId imageProxy)
     {
@@ -1563,6 +1597,7 @@ namespace legit
           }break;
         }
       }
+      bufferCache.PurgeUnused();
     }
     legit::Buffer *GetResolvedBuffer(size_t taskIndex, BufferProxyId bufferProxyId)
     {

@@ -1,63 +1,89 @@
 namespace legit
 {
+  //This follows the sync pattern described in https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
+  //acquireToSubmitSemaphore == acquire_semaphore
+  //submitToPresentSemaphore == submit_semaphore
   struct PresentQueue
   {
-    PresentQueue(legit::Core *core, legit::WindowDesc windowDesc, glm::uvec2 defaultSize, uint32_t imagesCount, vk::PresentModeKHR preferredMode)
+    PresentQueue(legit::Core *core, legit::WindowDesc windowDesc, glm::uvec2 defaultSize, uint32_t desiredImagesCount, vk::PresentModeKHR preferredMode)
     {
       this->core = core;
-      this->swapchain = core->CreateSwapchain(windowDesc, defaultSize, imagesCount, preferredMode);
-      this->swapchainImageViews = swapchain->GetImageViews();
+      this->swapchain = core->CreateSwapchain(windowDesc, defaultSize, desiredImagesCount, preferredMode);
+
+      for (size_t imageIndex = 0; imageIndex < swapchain->GetImagesCount(); imageIndex++)
+      {
+        auto swapchainImageView = swapchain->GetImageView(imageIndex);
+        SwapchainImageResources res;
+        res.submitToPresentSemaphore = core->CreateVulkanSemaphore();
+        res.imageViewProxy = core->GetRenderGraph()->AddExternalImageView(swapchainImageView);
+        swapchainImageResources.emplace_back(std::move(res));
+      }
       this->swapchainRect = vk::Rect2D(vk::Offset2D(), swapchain->GetSize());
-      this->imageIndex = -1;
     }
-    legit::ImageView *AcquireImage(vk::Semaphore signalSemaphore)
+    struct AcquiredSwapchainImage
     {
-      this->imageIndex = swapchain->AcquireNextImage(signalSemaphore).value;
-      return swapchainImageViews[imageIndex];
+      legit::RenderGraph::ImageViewProxyId imageViewProxyId;
+      vk::Semaphore submitToPresentSemaphore;
+    };
+    AcquiredSwapchainImage AcquireImage(vk::Semaphore acquireToSubmitSempahores)
+    {
+      assert(acquiredImageIndex == uint32_t(-1));
+      this->acquiredImageIndex = swapchain->AcquireNextImage(acquireToSubmitSempahores).value;
+      AcquiredSwapchainImage acquiredImage;
+      acquiredImage.imageViewProxyId = swapchainImageResources[acquiredImageIndex].imageViewProxy->Id();
+      acquiredImage.submitToPresentSemaphore = swapchainImageResources[acquiredImageIndex].submitToPresentSemaphore.get();
+      return acquiredImage;
     }
-    void PresentImage(vk::Semaphore waitSemaphore)
+    void PresentAcquiredImage()
     {
+      assert(acquiredImageIndex != uint32_t(-1));
       vk::SwapchainKHR swapchains[] = { swapchain->GetHandle() };
-      vk::Semaphore waitSemaphores[] = { waitSemaphore };
+      vk::Semaphore waitSemaphores[] = { swapchainImageResources[acquiredImageIndex].submitToPresentSemaphore.get() };
       auto presentInfo = vk::PresentInfoKHR()
         .setSwapchainCount(1)
         .setPSwapchains(swapchains)
-        .setPImageIndices(&imageIndex)
+        .setPImageIndices(&acquiredImageIndex)
         .setPResults(nullptr)
         .setWaitSemaphoreCount(1)
         .setPWaitSemaphores(waitSemaphores);
-
       auto res = core->GetPresentQueue().presentKHR(presentInfo);
+      acquiredImageIndex = uint32_t(-1);
     }
     vk::Extent2D GetImageSize()
     {
       return swapchain->GetSize();
     }
   private:
+    uint32_t acquiredImageIndex = uint32_t (-1);
     legit::Core *core;
-    uint32_t imageIndex;
     vk::Rect2D swapchainRect;
     
     std::unique_ptr<legit::Swapchain> swapchain;
-    std::vector<legit::ImageView *> swapchainImageViews;
+
+    struct SwapchainImageResources
+    {
+      vk::UniqueSemaphore submitToPresentSemaphore;
+      RenderGraph::ImageViewProxyUnique imageViewProxy;
+    };
+    std::vector<SwapchainImageResources> swapchainImageResources;
   };
   
   struct InFlightQueue
   {
-    InFlightQueue(legit::Core *core, legit::WindowDesc windowDesc, glm::uvec2 defaultSize, uint32_t inFlightCount, vk::PresentModeKHR preferredMode)
+    InFlightQueue(legit::Core *core, legit::WindowDesc windowDesc, glm::uvec2 defaultSize, uint32_t inFlightCount, uint32_t desiredSwapchainImageCount, vk::PresentModeKHR preferredMode, bool waitForPreviousFrame = false)
     {
       this->core = core;
       this->memoryPool = std::make_unique<legit::ShaderMemoryPool>(core->GetDynamicMemoryAlignment());
-
-      presentQueue.reset(new PresentQueue(core, windowDesc, defaultSize, inFlightCount, preferredMode));
-
+      this->waitForPreviousFrame = waitForPreviousFrame;
+      presentQueue.reset(new PresentQueue(core, windowDesc, defaultSize, desiredSwapchainImageCount, preferredMode));
 
       for (size_t frameIndex = 0; frameIndex < inFlightCount; frameIndex++)
       {
         FrameResources frame;
-        frame.inFlightFence = core->CreateFence(true);
-        frame.imageAcquiredSemaphore = core->CreateVulkanSemaphore();
-        frame.renderingFinishedSemaphore = core->CreateVulkanSemaphore();
+        frame.submitToRecordFence = core->CreateFence(true);
+        frame.acquireToSubmitSemaphore = core->CreateVulkanSemaphore();
+        if(waitForPreviousFrame)
+          frame.thisToNextFrameSemaphore = core->CreateVulkanSemaphore();
 
         frame.commandBuffer = std::move(core->AllocateCommandBuffers(1)[0]);
         core->SetObjectDebugName(frame.commandBuffer.get(), std::string("Frame") + std::to_string(frameIndex) + " command buffer");
@@ -65,6 +91,7 @@ namespace legit
         frame.gpuProfiler = std::unique_ptr<legit::GpuProfiler>(new legit::GpuProfiler(core->GetPhysicalDevice(), core->GetLogicalDevice(), 4096));
         frames.push_back(std::move(frame));
       }
+
       frameIndex = 0;
     }
     vk::Extent2D GetImageSize()
@@ -89,13 +116,13 @@ namespace legit
       auto &currFrame = frames[frameIndex];
       {
         auto fenceTask = cpuProfiler.StartScopedTask("WaitForFence", legit::Colors::pomegranate);
-        core->WaitForFence(currFrame.inFlightFence.get());
-        core->ResetFence(currFrame.inFlightFence.get());
+        core->WaitForFence(currFrame.submitToRecordFence.get());
+        core->ResetFence(currFrame.submitToRecordFence.get());
       }
 
       {
         auto imageAcquireTask = cpuProfiler.StartScopedTask("ImageAcquire", legit::Colors::emerald);
-        currSwapchainImageView = presentQueue->AcquireImage(currFrame.imageAcquiredSemaphore.get());
+        this->acquiredSwapchainImage = presentQueue->AcquireImage(currFrame.acquireToSubmitSemaphore.get());
       }
 
       {
@@ -103,11 +130,6 @@ namespace legit
         currFrame.gpuProfiler->GatherTimestamps();
       }
 
-      auto &swapchainViewProxyId = swapchainImageViewProxies[currSwapchainImageView];
-      if (!swapchainViewProxyId.IsAttached())
-      {
-        swapchainViewProxyId = core->GetRenderGraph()->AddExternalImageView(currSwapchainImageView);
-      }
       core->GetRenderGraph()->AddPass(legit::RenderGraph::FrameSyncBeginPassDesc());
 
       memoryPool->MapBuffer(currFrame.shaderMemoryBuffer.get());
@@ -115,15 +137,15 @@ namespace legit
       FrameInfo frameInfo;
       frameInfo.memoryPool = memoryPool.get();
       frameInfo.frameIndex = frameIndex;
-      frameInfo.swapchainImageViewProxyId = swapchainViewProxyId->Id();
+      frameInfo.swapchainImageViewProxyId = acquiredSwapchainImage.imageViewProxyId;
 
       return frameInfo;
     }
     void EndFrame()
     {
-      auto &currFrame = frames[frameIndex];
+      const auto &currFrame = frames[frameIndex];
 
-      core->GetRenderGraph()->AddImagePresent(swapchainImageViewProxies[currSwapchainImageView]->Id());
+      core->GetRenderGraph()->AddImagePresent(acquiredSwapchainImage.imageViewProxyId);
       core->GetRenderGraph()->AddPass(legit::RenderGraph::FrameSyncEndPassDesc());
 
       auto bufferBeginInfo = vk::CommandBufferBeginInfo()
@@ -137,28 +159,38 @@ namespace legit
 
       memoryPool->UnmapBuffer();
 
+      {
+        auto presentTask = cpuProfiler.StartScopedTask("Submit", legit::Colors::amethyst);
+        std::vector<vk::Semaphore> waitSemaphores = { currFrame.acquireToSubmitSemaphore.get() };
+        std::vector<vk::PipelineStageFlags> waitStages = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+        std::vector<vk::Semaphore> signalSemaphores = { acquiredSwapchainImage.submitToPresentSemaphore };
+
+        if (this->waitForPreviousFrame)
+        {
+          if (previousFrameIndex != size_t(-1))
+          {
+            const auto& prevFrame = frames[previousFrameIndex];
+            waitSemaphores.push_back(prevFrame.thisToNextFrameSemaphore.get());
+            waitStages.push_back(vk::PipelineStageFlagBits::eAllCommands);
+          }
+          signalSemaphores.push_back(currFrame.thisToNextFrameSemaphore.get());
+        }
+
+
+        auto submitInfo = vk::SubmitInfo()
+          .setWaitSemaphores(waitSemaphores)
+          .setWaitDstStageMask(waitStages)
+          .setCommandBuffers({ currFrame.commandBuffer.get() })
+          .setSignalSemaphores(signalSemaphores);
+
+        core->GetGraphicsQueue().submit({ submitInfo }, currFrame.submitToRecordFence.get());
+      }
 
       {
-        {
-          auto presentTask = cpuProfiler.StartScopedTask("Submit", legit::Colors::amethyst);
-          vk::Semaphore waitSemaphores[] = { currFrame.imageAcquiredSemaphore.get() };
-          vk::Semaphore signalSemaphores[] = { currFrame.renderingFinishedSemaphore.get() };
-          vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-
-          auto submitInfo = vk::SubmitInfo()
-            .setWaitSemaphoreCount(1)
-            .setPWaitSemaphores(waitSemaphores)
-            .setPWaitDstStageMask(waitStages)
-            .setCommandBufferCount(1)
-            .setPCommandBuffers(&currFrame.commandBuffer.get())
-            .setSignalSemaphoreCount(1)
-            .setPSignalSemaphores(signalSemaphores);
-
-          core->GetGraphicsQueue().submit({ submitInfo }, currFrame.inFlightFence.get());
-        }
         auto presentTask = cpuProfiler.StartScopedTask("Present", legit::Colors::alizarin);
-        presentQueue->PresentImage(currFrame.renderingFinishedSemaphore.get());
+        presentQueue->PresentAcquiredImage();
       }
+      previousFrameIndex = frameIndex;
       frameIndex = (frameIndex + 1) % frames.size();
 
       cpuProfiler.EndFrame(profilerFrameId);
@@ -179,23 +211,26 @@ namespace legit
   private:
     std::unique_ptr<legit::ShaderMemoryPool> memoryPool;
     std::unique_ptr<PresentQueue> presentQueue;
+    bool waitForPreviousFrame = false;
+
     std::map<legit::ImageView *, legit::RenderGraph::ImageViewProxyUnique> swapchainImageViewProxies;
 
     struct FrameResources
     {
-      vk::UniqueSemaphore imageAcquiredSemaphore;
-      vk::UniqueSemaphore renderingFinishedSemaphore;
-      vk::UniqueFence inFlightFence;
+      vk::UniqueSemaphore thisToNextFrameSemaphore;
+      vk::UniqueSemaphore acquireToSubmitSemaphore;
+      vk::UniqueFence submitToRecordFence;
 
       vk::UniqueCommandBuffer commandBuffer;
       std::unique_ptr<legit::Buffer> shaderMemoryBuffer;
       std::unique_ptr<legit::GpuProfiler> gpuProfiler;
     };
     std::vector<FrameResources> frames;
-    size_t frameIndex;
+    size_t frameIndex = 0;
+    size_t previousFrameIndex = size_t(-1);
 
     legit::Core *core;
-    legit::ImageView *currSwapchainImageView;
+    PresentQueue::AcquiredSwapchainImage acquiredSwapchainImage;
     legit::CpuProfiler cpuProfiler;
     std::vector<legit::ProfilerTask> lastFrameCpuProfilerTasks;
 
