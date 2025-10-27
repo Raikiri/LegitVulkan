@@ -14,6 +14,7 @@
 //#include <Windows.h>
 
 #include <glm/glm.hpp>
+#include "Span.h"
 #include "Handles.h"
 #include "Pool.h"
 #include "CpuProfiler.h"

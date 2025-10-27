@@ -2,17 +2,39 @@
 
 #include <vector>
 #include <set>
+#include <span>
+
 namespace legit
 {
-  Core::Core(const char **instanceExtensions, uint32_t instanceExtensionsCount, WindowDesc *compatibleWindowDesc, bool enableDebugging)
+  static std::vector<const char *> GetCStrArray(const Span<std::string> &strings)
   {
-    std::vector<const char*> resIntanceExtensions(instanceExtensions, instanceExtensions + instanceExtensionsCount);
+    std::vector<const char *> res;
+    for(const auto &string : strings)
+    {
+      res.push_back(string.c_str());
+    }
+    return res;
+  }
+
+  Core::Core(
+    Span<std::string> instanceExtensions,
+    std::optional<WindowDesc> compatibleWindowDesc,
+    bool enableDebugging,
+    vk::PhysicalDeviceFeatures physicalDeviceFeatures,
+    vk::PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features,
+    vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT physicalDeviceShaderAtomicFloatFeatures)
+  {
+    std::vector<const char*> resIntanceExtensions = GetCStrArray(instanceExtensions);
     std::vector<const char*> validationLayers;
     if (enableDebugging)
     {
       validationLayers.push_back("VK_LAYER_KHRONOS_validation");
       resIntanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
+
+    std::vector<const char*> deviceExtensions;
+    deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    deviceExtensions.push_back("VK_EXT_shader_atomic_float");
 
     this->instance = CreateInstance(resIntanceExtensions, validationLayers);
     //loader = vk::DispatchLoaderDynamic();
@@ -34,17 +56,19 @@ namespace legit
     if(compatibleWindowDesc)
     {
       vk::UniqueSurfaceKHR compatibleSurface;
-      if (compatibleWindowDesc)
-      {
-        compatibleSurface = CreateSurface(instance.get(), *compatibleWindowDesc);
-      }
+      compatibleSurface = CreateSurface(instance.get(), *compatibleWindowDesc);
       this->queueFamilyIndices = FindQueueFamilyIndices(physicalDevice, compatibleSurface.get());
     }
-    
-    std::vector<const char*> deviceExtensions;
-    deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-    deviceExtensions.push_back("VK_EXT_shader_atomic_float");
-    this->logicalDevice = CreateLogicalDevice(physicalDevice, queueFamilyIndices, deviceExtensions, validationLayers);
+  
+      
+    this->logicalDevice = CreateLogicalDevice(
+      physicalDevice,
+      queueFamilyIndices,
+      deviceExtensions,
+      validationLayers,
+      physicalDeviceFeatures,
+      physicalDeviceVulkan12Features,
+      physicalDeviceShaderAtomicFloatFeatures);
     this->graphicsQueue = GetDeviceQueue(logicalDevice.get(), queueFamilyIndices.graphicsFamilyIndex);
     this->presentQueue = GetDeviceQueue(logicalDevice.get(), queueFamilyIndices.presentFamilyIndex);
     this->commandPool = CreateCommandPool(logicalDevice.get(), queueFamilyIndices.graphicsFamilyIndex);
@@ -151,7 +175,7 @@ namespace legit
   {
     return pipelineCache.get();
   }
-  vk::UniqueInstance Core::CreateInstance(const std::vector<const char*> &instanceExtensions, const std::vector<const char*> &validationLayers)
+  vk::UniqueInstance Core::CreateInstance(Span<const char*> instanceExtensions, Span<const char*> validationLayers)
   {
     auto appInfo = vk::ApplicationInfo()
       .setPApplicationName("Legit app")
@@ -162,10 +186,8 @@ namespace legit
 
     auto instanceCreateInfo = vk::InstanceCreateInfo()
       .setPApplicationInfo(&appInfo)
-      .setEnabledExtensionCount(uint32_t(instanceExtensions.size()))
-      .setPpEnabledExtensionNames(instanceExtensions.data())
-      .setEnabledLayerCount(uint32_t(validationLayers.size()))
-      .setPpEnabledLayerNames(validationLayers.data());
+      .setPEnabledExtensionNames(instanceExtensions)
+      .setPEnabledLayerNames(validationLayers);
 
     return vk::createInstanceUnique(instanceCreateInfo);
   }
@@ -209,6 +231,12 @@ namespace legit
         physicalDevice = device;
         std::cout << " <-- Using this device";
       }
+      
+      /*vk::PhysicalDeviceFeatures2 deviceFeatures2 = {};
+      vk::PhysicalDeviceVulkan12Features deviceVulkan12Features = {};
+      deviceFeatures2.pNext = &deviceVulkan12Features;
+      device.getFeatures2(&deviceFeatures2);*/
+      
       std::cout << "\n";
     }
     if(!physicalDevice)
@@ -236,7 +264,15 @@ namespace legit
     return queueFamilyIndices;
   }
 
-  vk::UniqueDevice Core::CreateLogicalDevice(vk::PhysicalDevice physicalDevice, QueueFamilyIndices familyIndices, std::vector<const char*> deviceExtensions, std::vector<const char*> validationLayers)
+  vk::UniqueDevice Core::CreateLogicalDevice(
+    vk::PhysicalDevice physicalDevice,
+    QueueFamilyIndices familyIndices,
+    Span<const char*> deviceExtensions,
+    Span<const char*> validationLayers,
+    vk::PhysicalDeviceFeatures physicalDeviceFeatures,
+    vk::PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features,
+    vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT physicalDeviceShaderAtomicFloatFeatures
+  )
   {
     std::set<uint32_t> uniqueQueueFamilyIndices = { familyIndices.graphicsFamilyIndex, familyIndices.presentFamilyIndex };
 
@@ -251,27 +287,17 @@ namespace legit
       queueCreateInfos.push_back(queueCreateInfo);
     }
 
-    auto deviceFeatures = vk::PhysicalDeviceFeatures()
-      .setFragmentStoresAndAtomics(true)
-      .setVertexPipelineStoresAndAtomics(true);
-
     auto deviceCreateInfo = vk::DeviceCreateInfo()
       .setQueueCreateInfoCount(uint32_t(queueCreateInfos.size()))
       .setPQueueCreateInfos(queueCreateInfos.data())
-      .setPEnabledFeatures(&deviceFeatures)
-      .setEnabledExtensionCount(uint32_t(deviceExtensions.size()))
-      .setPpEnabledExtensionNames(deviceExtensions.data())
-      .setEnabledLayerCount(uint32_t(validationLayers.size()))
-      .setPpEnabledLayerNames(validationLayers.data());
+      .setPEnabledFeatures(&physicalDeviceFeatures)
+      .setPEnabledExtensionNames(deviceExtensions)
+      .setPEnabledLayerNames(validationLayers);
 
-    auto deviceFeatures12 = vk::PhysicalDeviceVulkan12Features()
-      .setScalarBlockLayout(true);
-
-    auto floatAtomicFeatures = vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT()
-      .setShaderBufferFloat32Atomics(true)
-      .setShaderBufferFloat32AtomicAdd(true);
-
-    vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT> chain = { deviceCreateInfo , deviceFeatures12, floatAtomicFeatures };
+    vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT> chain = {
+      deviceCreateInfo,
+      physicalDeviceVulkan12Features,
+      physicalDeviceShaderAtomicFloatFeatures };
 
     return physicalDevice.createDeviceUnique(chain.get<vk::DeviceCreateInfo>());
   }

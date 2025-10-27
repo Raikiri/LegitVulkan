@@ -1,5 +1,5 @@
 #include <iostream>
-
+#include <optional>
 #include <vector>
 #include <set>
 namespace legit
@@ -9,7 +9,13 @@ namespace legit
   class Core
   {
   public:    
-    inline Core(const char** instanceExtensions, uint32_t instanceExtensionsCount, WindowDesc* compatibleWindowDesc, bool enableDebugging);
+    inline Core(
+      Span<std::string> instanceExtensions,
+      std::optional<WindowDesc> compatibleWindowDesc,
+      bool enableDebugging,
+      vk::PhysicalDeviceFeatures physicalDeviceFeatures = {},
+      vk::PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features = {},
+      vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT physicalDeviceShaderAtomicFloatFeatures = {});
 
     inline ~Core();
     inline void ClearCaches();
@@ -52,7 +58,7 @@ namespace legit
     inline legit::PipelineCache* GetPipelineCache();
   private:
 
-    static inline vk::UniqueInstance CreateInstance(const std::vector<const char*>& instanceExtensions, const std::vector<const char*>& validationLayers);
+    static inline vk::UniqueInstance CreateInstance(Span<const char*> instanceExtensions, Span<const char*> validationLayers);
 
     static inline vk::UniqueHandle<vk::DebugUtilsMessengerEXT, vk::detail::DispatchLoaderDynamic> CreateDebugUtilsMessenger(vk::Instance instance, vk::PFN_DebugUtilsMessengerCallbackEXT debugCallback, vk::detail::DispatchLoaderDynamic& loader);
 
@@ -67,7 +73,14 @@ namespace legit
 
     static inline QueueFamilyIndices FindQueueFamilyIndices(vk::PhysicalDevice physicalDevice, vk::SurfaceKHR surface);
 
-    static inline vk::UniqueDevice CreateLogicalDevice(vk::PhysicalDevice physicalDevice, QueueFamilyIndices familyIndices, std::vector<const char*> deviceExtensions, std::vector<const char*> validationLayers);
+    static inline vk::UniqueDevice CreateLogicalDevice(
+      vk::PhysicalDevice physicalDevice,
+      QueueFamilyIndices familyIndices,
+      Span<const char*> deviceExtensions,
+      Span<const char*> validationLayers,
+      vk::PhysicalDeviceFeatures physicalDeviceFeatures,
+      vk::PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features,
+      vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT physicalDeviceShaderAtomicFloatFeatures);
     static inline vk::Queue GetDeviceQueue(vk::Device logicalDevice, uint32_t queueFamilyIndex);
     static inline vk::UniqueCommandPool CreateCommandPool(vk::Device logicalDevice, uint32_t familyIndex);
 
