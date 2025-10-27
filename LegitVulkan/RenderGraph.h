@@ -582,6 +582,119 @@ namespace legit
       uint32_t profilerTaskColor;
     };
 
+    struct PassContext2
+    {
+      struct DescriptorSetBindings
+      {
+        DescriptorSetBindings(legit::ShaderProgram *shaderProgram, size_t setIndex) :
+          setIndex(setIndex),
+          shaderDataSetInfo(shaderProgram->GetSetInfo(setIndex))
+        {
+        }
+        DescriptorSetBindings &AddImageSamplerBinding(std::string name, legit::ImageView *imageView, legit::Sampler *sampler)
+        {
+          imageSamplerBindings.push_back(shaderDataSetInfo->MakeImageSamplerBinding(name, imageView, sampler));
+          return *this;
+        }
+        std::vector<legit::ImageSamplerBinding> imageSamplerBindings;
+        const legit::DescriptorSetLayoutKey *shaderDataSetInfo;
+        size_t setIndex;
+      };
+      
+      void BindDescriptorSet(const DescriptorSetBindings &bindings)
+      {
+        
+      }
+      vk::CommandBuffer GetCommandBuffer()
+      {
+        return commandBuffer;
+      }
+    private:
+      std::vector<legit::ImageView *> resolvedImageViews;
+      std::vector<legit::Buffer *> resolvedBuffers;
+      vk::CommandBuffer commandBuffer;
+      friend class RenderGraph;
+    };
+    
+    struct RenderPass2Desc
+    {
+      RenderPass2Desc()
+      {
+        profilerTaskName = "RenderPass";
+        profilerTaskColor = glm::packUnorm4x8(glm::vec4(1.0f, 0.5f, 0.0f, 1.0f));
+      }
+      struct Attachment
+      {
+        ImageView *imageView;
+        vk::AttachmentLoadOp loadOp;
+        vk::ClearValue clearValue;
+      };
+      RenderPass2Desc &SetColorAttachments(
+        const std::vector<ImageView*> _colorAttachments, 
+        vk::AttachmentLoadOp _loadOp = vk::AttachmentLoadOp::eDontCare, 
+        vk::ClearValue _clearValue = vk::ClearColorValue(std::array<float, 4>{1.0f, 0.5f, 0.0f, 1.0f}))
+      {
+        this->colorAttachments.resize(_colorAttachments.size());
+        for (size_t index = 0; index < _colorAttachments.size(); index++)
+        {
+          this->colorAttachments[index] = { _colorAttachments [index], _loadOp, _clearValue};
+        }
+        return *this;
+      }
+      RenderPass2Desc &SetColorAttachments(std::vector<Attachment> &&_colorAttachments)
+      {
+        this->colorAttachments = std::move(_colorAttachments);
+        return *this;
+      }
+
+      RenderPass2Desc &SetDepthAttachment(
+        ImageView *_depthAttachmentView,
+        vk::AttachmentLoadOp _loadOp = vk::AttachmentLoadOp::eDontCare,
+        vk::ClearValue _clearValue = vk::ClearDepthStencilValue(1.0f, 0))
+      {
+        this->depthAttachment.imageView = _depthAttachmentView;
+        this->depthAttachment.loadOp = _loadOp;
+        this->depthAttachment.clearValue = _clearValue;
+        return *this;
+      }
+      RenderPass2Desc &SetDepthAttachment(Attachment _depthAttachment)
+      {
+        this->depthAttachment = _depthAttachment;
+        return *this;
+      }
+      RenderPass2Desc &SetRenderAreaExtent(vk::Extent2D _renderAreaExtent)
+      {
+        this->renderAreaExtent = _renderAreaExtent;
+        return *this;
+      }
+
+      RenderPass2Desc &SetRecordFunc(std::function<void(RenderPassContext)> _recordFunc)
+      {
+        this->recordFunc = _recordFunc;
+        return *this;
+      }
+      RenderPass2Desc &SetProfilerInfo(uint32_t taskColor, std::string taskName)
+      {
+        this->profilerTaskColor = taskColor;
+        this->profilerTaskName = taskName;
+        return *this;
+      }
+
+      std::vector<Attachment> colorAttachments;
+      Attachment depthAttachment;
+
+      std::vector<ImageView*> inputImageViews;
+      std::vector<Buffer*> vertexBuffers;
+      std::vector<Buffer*> inoutStorageBuffers;
+      std::vector<ImageView*> inoutStorageImages;
+
+      vk::Extent2D renderAreaExtent;
+      std::function<void(RenderPassContext)> recordFunc;
+
+      std::string profilerTaskName;
+      uint32_t profilerTaskColor;
+    };
+
     void AddRenderPass(
       std::vector<ImageViewProxyId> colorAttachmentImageProxies,
       ImageViewProxyId depthAttachmentImageProxy,
