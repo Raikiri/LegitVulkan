@@ -24,9 +24,9 @@
 #include "VertexDeclaration.h"
 #include "ShaderModule.h"
 #include "ShaderProgram.h"
+#include "Synchronization.h"
 #include "Buffer.h"
 #include "Image.h"
-#include "Synchronization.h"
 #include "TimestampQuery.h"
 #include "GpuProfiler.h"
 #include "Sampler.h"
@@ -41,6 +41,7 @@
 #include "RenderPassCache.h"
 
 #include "Core.h"
+#include "StateTracker.h"
 #include "RenderGraph.h"
 #include "CoreImpl.h"
 

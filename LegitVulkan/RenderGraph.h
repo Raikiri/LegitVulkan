@@ -2,6 +2,12 @@
 
 namespace legit
 {
+  template<typename T>
+  void AppendVectors(std::vector<T> &a, const std::vector<T> &b)
+  {
+    a.insert(a.end(), b.begin(), b.end());
+  }
+  
   class RenderGraph;
 
   template<typename Base>
@@ -917,8 +923,33 @@ namespace legit
 
       frameSyncEndDescs.push_back(frameSyncEndDesc);
     }
+    
+    static void SubmitBarriers(vk::CommandBuffer commandBuffer, Span<StateTracker::ImageBarrier> imageBarriers, Span<StateTracker::BufferBarrier> bufferBarriers)
+    {
+      vk::PipelineStageFlags srcStage = {};
+      vk::PipelineStageFlags dstStage = {};
 
-    void Execute(vk::CommandBuffer commandBuffer, legit::CpuProfiler *cpuProfiler, legit::GpuProfiler *gpuProfiler)
+      std::vector<vk::ImageMemoryBarrier> vkImageMemoryBarriers;
+      for(auto imageBarrier : imageBarriers)
+      {
+        srcStage |= imageBarrier.srcStage;
+        dstStage |= imageBarrier.dstStage;
+        vkImageMemoryBarriers.push_back(imageBarrier.imageMemoryBarrier);
+      }
+
+      std::vector<vk::BufferMemoryBarrier> vkBufferMemoryBarriers;
+      for(auto bufferBarrier : bufferBarriers)
+      {
+        srcStage |= bufferBarrier.srcStage;
+        dstStage |= bufferBarrier.dstStage;
+        vkBufferMemoryBarriers.push_back(bufferBarrier.bufferMemoryBarrier);
+      }
+      
+      if (imageBarriers.size() > 0 || bufferBarriers.size() > 0)
+        commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), {}, vkBufferMemoryBarriers, vkImageMemoryBarriers);
+    }
+
+    void ExecuteOld(vk::CommandBuffer commandBuffer, legit::CpuProfiler *cpuProfiler, legit::GpuProfiler *gpuProfiler)
     {
       ResolveImages();
       ResolveImageViews();
@@ -1225,8 +1256,6 @@ namespace legit
         }
       }
 
-      FlushExternalImages(commandBuffer, cpuProfiler, gpuProfiler);
-
       renderPassDescs.clear();
       transferPassDescs.clear();
       imagePresentDescs.clear();
@@ -1235,32 +1264,304 @@ namespace legit
       tasks.clear();
     }
 
-  private:
-    void FlushExternalImages(vk::CommandBuffer commandBuffer, legit::CpuProfiler *cpuProfiler, legit::GpuProfiler *gpuProfiler)
+    void Execute(vk::CommandBuffer commandBuffer, legit::CpuProfiler *cpuProfiler, legit::GpuProfiler *gpuProfiler)
     {
-      //need to make sure I don't override the same mip level of an image twice if there's more than view for it
+      ResolveImages();
+      ResolveImageViews();
+      ResolveBuffers();
 
-      /*if (tasks.size() == 0) return;
-      size_t lastTaskIndex = tasks.size() - 1;
-
-      for (auto &imageViewProxy : this->imageViewProxies)
+      StateTracker stateTracker;
+      
+      for (size_t taskIndex = 0; taskIndex < tasks.size(); taskIndex++)
       {
-        if (imageViewProxy.type == ImageViewProxy::Types::External)
+        auto &task = tasks[taskIndex];
+        switch (task.type)
         {
-          vk::PipelineStageFlags srcStage;
-          vk::PipelineStageFlags dstStage;
-
-          std::vector<vk::ImageMemoryBarrier> imageBarriers;
-          if (imageViewProxy.externalUsageType != legit::ImageUsageTypes::Unknown)
+          case Task::Types::RenderPass:
           {
-            AddImageTransitionBarriers(imageViewProxy.externalView, imageViewProxy.externalUsageType, tasks.size(), srcStage, dstStage, imageBarriers);
-          }
+            auto &renderPassDesc = renderPassDescs[task.index];
+            auto profilerTask = CreateProfilerTask(renderPassDesc);
+            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
+            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
 
-          if (imageBarriers.size() > 0)
-            commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), {}, {}, imageBarriers);
+            RenderPassContext passContext;
+            passContext.resolvedImageViews.resize(imageViewProxies.GetSize(), nullptr);
+            passContext.resolvedBuffers.resize(bufferProxies.GetSize(), nullptr);
+
+            for (auto &inputImageViewProxy : renderPassDesc.inputImageViewProxies)
+            {
+              passContext.resolvedImageViews[inputImageViewProxy.asInt] = GetResolvedImageView(taskIndex, inputImageViewProxy);
+            }
+
+            for (auto &inoutStorageImageProxy : renderPassDesc.inoutStorageImageProxies)
+            {
+              passContext.resolvedImageViews[inoutStorageImageProxy.asInt] = GetResolvedImageView(taskIndex, inoutStorageImageProxy);
+            }
+
+            for (auto &inoutBufferProxy : renderPassDesc.inoutStorageBufferProxies)
+            {
+              passContext.resolvedBuffers[inoutBufferProxy.asInt] = GetResolvedBuffer(taskIndex, inoutBufferProxy);
+            }
+
+            for (auto& vertexBufferProxy : renderPassDesc.vertexBufferProxies)
+            {
+              passContext.resolvedBuffers[vertexBufferProxy.asInt] = GetResolvedBuffer(taskIndex, vertexBufferProxy);
+            }
+
+            std::vector<StateTracker::ImageBarrier> imageBarriers;
+            for (auto inputImageViewProxy : renderPassDesc.inputImageViewProxies)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, inputImageViewProxy);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::GraphicsShaderRead));
+            }
+
+            for (auto &inoutStorageImageProxy : renderPassDesc.inoutStorageImageProxies)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, inoutStorageImageProxy);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::GraphicsShaderReadWrite));
+            }
+
+            for (auto colorAttachment : renderPassDesc.colorAttachments)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, colorAttachment.imageViewProxyId);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::ColorAttachment));
+            }
+
+            if(!(renderPassDesc.depthAttachment.imageViewProxyId == ImageViewProxyId()))
+            {
+              auto imageView = GetResolvedImageView(taskIndex, renderPassDesc.depthAttachment.imageViewProxyId);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::DepthAttachment));
+            }
+
+            std::vector<StateTracker::BufferBarrier> bufferBarriers;
+            for (auto vertexBufferProxy : renderPassDesc.vertexBufferProxies)
+            {
+              auto storageBuffer = GetResolvedBuffer(taskIndex, vertexBufferProxy);
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer, BufferUsageTypes::VertexBuffer));
+            }
+
+            for (auto inoutBufferProxy : renderPassDesc.inoutStorageBufferProxies)
+            {
+              auto storageBuffer = GetResolvedBuffer(taskIndex, inoutBufferProxy);
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer, BufferUsageTypes::GraphicsShaderReadWrite));
+            }
+
+            SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
+            
+            std::vector<FramebufferCache::Attachment> colorAttachments;
+            FramebufferCache::Attachment depthAttachment;
+
+            legit::RenderPassCache::RenderPassKey renderPassKey;
+
+            for (auto &attachment : renderPassDesc.colorAttachments)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, attachment.imageViewProxyId);
+
+              renderPassKey.colorAttachmentDescs.push_back({imageView->GetImageData()->GetFormat(), attachment.loadOp, attachment.clearValue });
+              colorAttachments.push_back({ imageView, attachment.clearValue });
+            }
+            bool depthPresent = !(renderPassDesc.depthAttachment.imageViewProxyId == ImageViewProxyId());
+            if (depthPresent)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, renderPassDesc.depthAttachment.imageViewProxyId);
+
+              renderPassKey.depthAttachmentDesc = { imageView->GetImageData()->GetFormat(), renderPassDesc.depthAttachment.loadOp, renderPassDesc.depthAttachment.clearValue };
+              depthAttachment = { imageView, renderPassDesc.depthAttachment.clearValue };
+            }
+            else
+            {
+              renderPassKey.depthAttachmentDesc.format = vk::Format::eUndefined;
+            }
+
+            auto renderPass = renderPassCache.GetRenderPass(renderPassKey);
+            passContext.renderPass = renderPass;
+
+            framebufferCache.BeginPass(commandBuffer, colorAttachments, depthPresent ? (&depthAttachment) : nullptr, renderPass, renderPassDesc.renderAreaExtent);
+            passContext.commandBuffer = commandBuffer;
+            renderPassDesc.recordFunc(passContext);
+            framebufferCache.EndPass(commandBuffer);
+          }break;
+          case Task::Types::ComputePass:
+          {
+            auto &computePassDesc = computePassDescs[task.index];
+            auto profilerTask = CreateProfilerTask(computePassDesc);
+            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
+            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
+
+            PassContext passContext;
+            passContext.resolvedImageViews.resize(imageViewProxies.GetSize(), nullptr);
+            passContext.resolvedBuffers.resize(bufferProxies.GetSize(), nullptr);
+
+            for (auto &inputImageViewProxy : computePassDesc.inputImageViewProxies)
+            {
+              passContext.resolvedImageViews[inputImageViewProxy.asInt] = GetResolvedImageView(taskIndex, inputImageViewProxy);
+            }
+
+            for (auto &inoutBufferProxy : computePassDesc.inoutStorageBufferProxies)
+            {
+              passContext.resolvedBuffers[inoutBufferProxy.asInt] = GetResolvedBuffer(taskIndex, inoutBufferProxy);
+            }
+
+            for (auto &inoutStorageImageProxy : computePassDesc.inoutStorageImageProxies)
+            {
+              passContext.resolvedImageViews[inoutStorageImageProxy.asInt] = GetResolvedImageView(taskIndex, inoutStorageImageProxy);
+            }
+
+            std::vector<StateTracker::ImageBarrier> imageBarriers;
+            for (auto inputImageViewProxy : computePassDesc.inputImageViewProxies)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, inputImageViewProxy);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::ComputeShaderRead));
+            }
+
+            for (auto &inoutStorageImageProxy : computePassDesc.inoutStorageImageProxies)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, inoutStorageImageProxy);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::ComputeShaderReadWrite));
+            }
+
+            std::vector<StateTracker::BufferBarrier> bufferBarriers;
+            for (auto inoutBufferProxy : computePassDesc.inoutStorageBufferProxies)
+            {
+              auto storageBuffer = GetResolvedBuffer(taskIndex, inoutBufferProxy);
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer, BufferUsageTypes::ComputeShaderReadWrite));
+            }
+
+            SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
+
+            passContext.commandBuffer = commandBuffer;
+            if(computePassDesc.recordFunc)
+              computePassDesc.recordFunc(passContext);
+          }break;
+          case Task::Types::TransferPass:
+          {
+            auto& transferPassDesc = transferPassDescs[task.index];
+            auto profilerTask = CreateProfilerTask(transferPassDesc);
+            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
+            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
+
+            PassContext passContext;
+            passContext.resolvedImageViews.resize(imageViewProxies.GetSize(), nullptr);
+            passContext.resolvedBuffers.resize(bufferProxies.GetSize(), nullptr);
+
+            for (auto& srcImageViewProxy : transferPassDesc.srcImageViewProxies)
+            {
+              passContext.resolvedImageViews[srcImageViewProxy.asInt] = GetResolvedImageView(taskIndex, srcImageViewProxy);
+            }
+            for (auto& dstImageViewProxy : transferPassDesc.dstImageViewProxies)
+            {
+              passContext.resolvedImageViews[dstImageViewProxy.asInt] = GetResolvedImageView(taskIndex, dstImageViewProxy);
+            }
+
+            for (auto& srcBufferProxy : transferPassDesc.srcBufferProxies)
+            {
+              passContext.resolvedBuffers[srcBufferProxy.asInt] = GetResolvedBuffer(taskIndex, srcBufferProxy);
+            }
+
+            for (auto& dstBufferProxy : transferPassDesc.dstBufferProxies)
+            {
+              passContext.resolvedBuffers[dstBufferProxy.asInt] = GetResolvedBuffer(taskIndex, dstBufferProxy);
+            }
+
+            std::vector<StateTracker::ImageBarrier> imageBarriers;
+            for (auto srcImageViewProxy : transferPassDesc.srcImageViewProxies)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, srcImageViewProxy);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::TransferSrc));
+            }
+
+            for (auto dstImageViewProxy : transferPassDesc.dstImageViewProxies)
+            {
+              auto imageView = GetResolvedImageView(taskIndex, dstImageViewProxy);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::TransferDst));
+            }
+
+            std::vector<StateTracker::BufferBarrier> bufferBarriers;
+            for (auto srcBufferProxy : transferPassDesc.srcBufferProxies)
+            {
+              auto storageBuffer = GetResolvedBuffer(taskIndex, srcBufferProxy);
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer, BufferUsageTypes::TransferSrc));
+            }
+
+            for (auto dstBufferProxy : transferPassDesc.dstBufferProxies)
+            {
+              auto storageBuffer = GetResolvedBuffer(taskIndex, dstBufferProxy);
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer, BufferUsageTypes::TransferDst));
+            }
+
+            SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
+
+            passContext.commandBuffer = commandBuffer;
+            if (transferPassDesc.recordFunc)
+              transferPassDesc.recordFunc(passContext);
+          }break;
+          case Task::Types::ImagePresent:
+          {
+            auto imagePesentDesc = imagePresentDescs[task.index];
+            auto profilerTask = CreateProfilerTask(imagePesentDesc);
+            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
+            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
+
+            std::vector<StateTracker::ImageBarrier> imageBarriers;
+            {
+              auto imageView = GetResolvedImageView(taskIndex, imagePesentDesc.presentImageViewProxyId);
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::Present));
+            }
+
+            std::vector<StateTracker::BufferBarrier> bufferBarriers;
+            SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
+          }break;
+          case Task::Types::FrameSyncBegin:
+          {
+            auto frameSyncDesc = frameSyncBeginDescs[task.index];
+            auto profilerTask = CreateProfilerTask(frameSyncDesc);
+            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
+            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
+
+            std::vector<vk::ImageMemoryBarrier> imageBarriers;
+            vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eBottomOfPipe;
+            vk::PipelineStageFlags dstStage = vk::PipelineStageFlagBits::eTopOfPipe;
+
+            auto memoryBarrier = vk::MemoryBarrier();
+            commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), { memoryBarrier }, {}, {});
+          }break;
+          case Task::Types::FrameSyncEnd:
+          {
+            auto frameSyncDesc = frameSyncEndDescs[task.index];
+            auto profilerTask = CreateProfilerTask(frameSyncDesc);
+            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
+            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
+
+            std::vector<StateTracker::ImageBarrier> imageBarriers;
+
+            for (auto imageViewProxy : imageViewProxies)
+            {
+              if(imageViewProxy.externalView != nullptr && imageViewProxy.externalUsageType != legit::ImageUsageTypes::Unknown && imageViewProxy.externalUsageType != legit::ImageUsageTypes::None)
+              {
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageViewProxy.externalView, imageViewProxy.externalUsageType));
+              }
+            }
+            
+            for(auto &imageBarrier : imageBarriers)
+            {
+              imageBarrier.srcStage |= vk::PipelineStageFlagBits::eBottomOfPipe;
+              imageBarrier.dstStage |= vk::PipelineStageFlagBits::eTopOfPipe;
+            }
+            std::vector<StateTracker::BufferBarrier> bufferBarriers;
+            SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
+          }break;
         }
-      }*/
+      }
+
+      renderPassDescs.clear();
+      transferPassDescs.clear();
+      imagePresentDescs.clear();
+      frameSyncBeginDescs.clear();
+      frameSyncEndDescs.clear();
+      tasks.clear();
     }
+    
+  private:
 
     bool ImageViewContainsSubresource(legit::ImageView *imageView, legit::ImageData *imageData, uint32_t mipLevel, uint32_t arrayLayer)
     {

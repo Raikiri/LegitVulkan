@@ -255,35 +255,6 @@ namespace legit
     return texelData;
   }
 
-
-
-  static void AddTransitionBarrier(legit::ImageData *imageData, legit::ImageUsageTypes srcUsageType, legit::ImageUsageTypes dstUsageType, vk::CommandBuffer commandBuffer)
-  {
-    auto srcImageAccessPattern = GetSrcImageAccessPattern(srcUsageType);
-    auto dstImageAccessPattern = GetDstImageAccessPattern(dstUsageType);
-
-    auto range = vk::ImageSubresourceRange()
-      .setAspectMask(imageData->GetAspectFlags())
-      .setBaseArrayLayer(0)
-      .setLayerCount(imageData->GetArrayLayersCount())
-      .setBaseMipLevel(0)
-      .setLevelCount(imageData->GetMipsCount());
-
-    auto imageBarrier = vk::ImageMemoryBarrier()
-      .setSrcAccessMask(srcImageAccessPattern.accessMask)
-      .setOldLayout(srcImageAccessPattern.layout)
-      .setDstAccessMask(dstImageAccessPattern.accessMask)
-      .setNewLayout(dstImageAccessPattern.layout)
-      .setSubresourceRange(range)
-      .setImage(imageData->GetHandle());
-
-    imageBarrier
-      .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-      .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
-
-    commandBuffer.pipelineBarrier(srcImageAccessPattern.stage, dstImageAccessPattern.stage, vk::DependencyFlags(), {}, {}, { imageBarrier });
-  }
-
   static void LoadTexelData(legit::Core *core, const ImageTexelData *texelData, legit::ImageData *dstImageData, legit::ImageUsageTypes dstUsageType = legit::ImageUsageTypes::GraphicsShaderRead)
   {
     auto stagingBuffer = std::unique_ptr<legit::Buffer>(new legit::Buffer(core->GetPhysicalDevice(), core->GetLogicalDevice(), texelData->texels.size(), vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent));

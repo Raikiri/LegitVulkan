@@ -80,10 +80,12 @@ namespace legit
       std::vector<vk::Image> swapchainImages = logicalDevice.getSwapchainImagesKHR(swapchain.get());
 
       this->images.clear();
+      
+      
       for (size_t imageIndex = 0; imageIndex < swapchainImages.size(); imageIndex++)
       {
         Image newbie;
-        newbie.imageData = std::unique_ptr<ImageData>(new ImageData(swapchainImages[imageIndex], vk::ImageType::e2D, glm::vec3(extent.width, extent.height, 1), 1, 1, surfaceFormat.format, vk::ImageLayout::eUndefined));
+        newbie.imageData = std::unique_ptr<ImageData>(new ImageData(swapchainImages[imageIndex], vk::ImageType::e2D, glm::vec3(extent.width, extent.height, 1), 1, 1, surfaceFormat.format, legit::ImageUsageTypes::Unknown));
         newbie.imageView = std::unique_ptr<ImageView>(new ImageView(logicalDevice, newbie.imageData.get(), 0, 1, 0, 1));
 
         this->images.emplace_back(std::move(newbie));

@@ -73,13 +73,17 @@ namespace legit
     {
       return mipsCount;
     }
+    ImageUsageTypes GetSubresourceBaseUsageType(uint32_t mipLevel, uint32_t arrayLayer)
+    {
+      return mipInfos[mipLevel].layerInfos[arrayLayer].baseUsageType;
+    }
     bool operator <(const ImageData &other) const
     {
       return std::tie(imageHandle) < std::tie(other.imageHandle);
     }
 
   private:
-    ImageData(vk::Image imageHandle, vk::ImageType imageType, glm::uvec3 size, uint32_t mipsCount, uint32_t arrayLayersCount, vk::Format format, vk::ImageLayout layout)
+    ImageData(vk::Image imageHandle, vk::ImageType imageType, glm::uvec3 size, uint32_t mipsCount, uint32_t arrayLayersCount, vk::Format format, legit::ImageUsageTypes baseUsageType)
     {
       this->imageHandle = imageHandle;
       this->format = format;
@@ -102,7 +106,7 @@ namespace legit
         mipInfo.layerInfos.resize(arrayLayersCount);
         for (size_t layerIndex = 0; layerIndex < arrayLayersCount; layerIndex++)
         {
-          mipInfo.layerInfos[layerIndex].currLayout = layout;
+          mipInfo.layerInfos[layerIndex].baseUsageType = baseUsageType;
         }
         mipInfos.push_back(mipInfo);
       }
@@ -120,7 +124,7 @@ namespace legit
 
     struct SubImageInfo
     {
-      vk::ImageLayout currLayout;
+      legit::ImageUsageTypes baseUsageType;
     };
     struct MipInfo
     {
@@ -141,6 +145,33 @@ namespace legit
     friend class legit::Swapchain;
     friend class Core;
   };
+  
+  static void AddTransitionBarrier(legit::ImageData *imageData, legit::ImageUsageTypes srcUsageType, legit::ImageUsageTypes dstUsageType, vk::CommandBuffer commandBuffer)
+  {
+    auto srcImageAccessPattern = GetSrcImageAccessPattern(srcUsageType);
+    auto dstImageAccessPattern = GetDstImageAccessPattern(dstUsageType);
+
+    auto range = vk::ImageSubresourceRange()
+      .setAspectMask(imageData->GetAspectFlags())
+      .setBaseArrayLayer(0)
+      .setLayerCount(imageData->GetArrayLayersCount())
+      .setBaseMipLevel(0)
+      .setLevelCount(imageData->GetMipsCount());
+
+    auto imageBarrier = vk::ImageMemoryBarrier()
+      .setSrcAccessMask(srcImageAccessPattern.accessMask)
+      .setOldLayout(srcImageAccessPattern.layout)
+      .setDstAccessMask(dstImageAccessPattern.accessMask)
+      .setNewLayout(dstImageAccessPattern.layout)
+      .setSubresourceRange(range)
+      .setImage(imageData->GetHandle());
+
+    imageBarrier
+      .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+      .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
+
+    commandBuffer.pipelineBarrier(srcImageAccessPattern.stage, dstImageAccessPattern.stage, vk::DependencyFlags(), {}, {}, { imageBarrier });
+  }
 
   class Image
   {
@@ -229,10 +260,20 @@ namespace legit
 
     Image(vk::PhysicalDevice physicalDevice, vk::Device logicalDevice, vk::ImageCreateInfo imageInfo, vk::MemoryPropertyFlags memFlags = vk::MemoryPropertyFlagBits::eDeviceLocal)
     {
+      Init(physicalDevice, logicalDevice, imageInfo, memFlags, legit::ImageUsageTypes::None);
+    }
+    Image(vk::PhysicalDevice physicalDevice, vk::Device logicalDevice, vk::ImageCreateInfo imageInfo, vk::CommandBuffer commandBuffer, legit::ImageUsageTypes baseUsageType, vk::MemoryPropertyFlags memFlags = vk::MemoryPropertyFlagBits::eDeviceLocal)
+    {
+      Init(physicalDevice, logicalDevice, imageInfo, memFlags, baseUsageType);
+      AddTransitionBarrier(GetImageData(), legit::ImageUsageTypes::Unknown, baseUsageType, commandBuffer);
+    }
+  private:
+    void Init(vk::PhysicalDevice physicalDevice, vk::Device logicalDevice, vk::ImageCreateInfo imageInfo, vk::MemoryPropertyFlags memFlags, legit::ImageUsageTypes baseUsageType)
+    {
       imageHandle = logicalDevice.createImageUnique(imageInfo);
       glm::uvec3 size = { imageInfo.extent.width, imageInfo.extent.height, imageInfo.extent.depth };
 
-      imageData.reset(new legit::ImageData(imageHandle.get(), imageInfo.imageType, size, imageInfo.mipLevels, imageInfo.arrayLayers, imageInfo.format, imageInfo.initialLayout));
+      imageData.reset(new legit::ImageData(imageHandle.get(), imageInfo.imageType, size, imageInfo.mipLevels, imageInfo.arrayLayers, imageInfo.format, baseUsageType));
 
       vk::MemoryRequirements imageMemRequirements = logicalDevice.getImageMemoryRequirements(imageHandle.get());
 
@@ -246,7 +287,6 @@ namespace legit
 
       logicalDevice.bindImageMemory(imageHandle.get(), imageMemory.get(), 0);
     }
-  private:
     vk::UniqueImage imageHandle;
     std::unique_ptr<legit::ImageData> imageData;
     vk::UniqueDeviceMemory imageMemory;
