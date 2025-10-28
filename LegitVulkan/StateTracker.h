@@ -76,6 +76,12 @@ namespace legit
         it->second = newUsageType;
         return lastUsage;
       }
+      
+      // VUID-VkImageMemoryBarrier-oldLayout-01197
+      // If srcQueueFamilyIndex and dstQueueFamilyIndex define a queue family ownership transfer or oldLayout and newLayout define an image layout transition,
+      // oldLayout must be VK_IMAGE_LAYOUT_UNDEFINED or the current layout of the image subresources affected by the barrier
+
+
       auto baseUsage = imgSubresource.imageData->GetSubresourceBaseUsageType(imgSubresource.mipLevel, imgSubresource.arrayLayer);
       imgSubresourceToCurrUsage[imgSubresource] = newUsageType;
       return baseUsage;

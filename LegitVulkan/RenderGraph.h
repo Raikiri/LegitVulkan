@@ -1534,6 +1534,12 @@ namespace legit
 
             std::vector<StateTracker::ImageBarrier> imageBarriers;
 
+            // Not transitioning any images into Undefined at the end of the frame if they're transitioned from Undefined next frame, because:
+            
+            // VUID-VkImageMemoryBarrier-oldLayout-01197
+            // If srcQueueFamilyIndex and dstQueueFamilyIndex define a queue family ownership transfer or oldLayout and newLayout define an image layout transition,
+            // oldLayout must be VK_IMAGE_LAYOUT_UNDEFINED or the current layout of the image subresources affected by the barrier
+
             for (auto imageViewProxy : imageViewProxies)
             {
               if(imageViewProxy.externalView != nullptr && imageViewProxy.externalUsageType != legit::ImageUsageTypes::Unknown && imageViewProxy.externalUsageType != legit::ImageUsageTypes::None)
