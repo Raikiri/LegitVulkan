@@ -23,6 +23,7 @@ namespace legit
     struct AcquiredSwapchainImage
     {
       legit::RenderGraph::ImageViewProxyId imageViewProxyId;
+      legit::ImageView *imageView;
       vk::Semaphore submitToPresentSemaphore;
     };
     AcquiredSwapchainImage AcquireImage(vk::Semaphore acquireToSubmitSempahores)
@@ -31,6 +32,7 @@ namespace legit
       this->acquiredImageIndex = swapchain->AcquireNextImage(acquireToSubmitSempahores).value;
       AcquiredSwapchainImage acquiredImage;
       acquiredImage.imageViewProxyId = swapchainImageResources[acquiredImageIndex].imageViewProxy->Id();
+      acquiredImage.imageView = swapchain->GetImageView(acquiredImageIndex);
       acquiredImage.submitToPresentSemaphore = swapchainImageResources[acquiredImageIndex].submitToPresentSemaphore.get();
       return acquiredImage;
     }
@@ -107,6 +109,7 @@ namespace legit
       legit::ShaderMemoryPool *memoryPool;
       size_t frameIndex;
       legit::RenderGraph::ImageViewProxyId swapchainImageViewProxyId;
+      legit::ImageView *swapchainImageView;
     };
 
     FrameInfo BeginFrame()
@@ -138,6 +141,7 @@ namespace legit
       frameInfo.memoryPool = memoryPool.get();
       frameInfo.frameIndex = frameIndex;
       frameInfo.swapchainImageViewProxyId = acquiredSwapchainImage.imageViewProxyId;
+      frameInfo.swapchainImageView = acquiredSwapchainImage.imageView;
 
       return frameInfo;
     }
@@ -153,7 +157,7 @@ namespace legit
       currFrame.commandBuffer->begin(bufferBeginInfo);
       {
         auto gpuFrame = currFrame.gpuProfiler->StartScopedFrame(currFrame.commandBuffer.get());
-        core->GetRenderGraph()->Execute(currFrame.commandBuffer.get(), &cpuProfiler, currFrame.gpuProfiler.get());
+        core->GetRenderGraph()->Execute(core->GetDescriptorSetCache(), memoryPool.get(), currFrame.commandBuffer.get(), &cpuProfiler, currFrame.gpuProfiler.get());
       }
       currFrame.commandBuffer->end();
 

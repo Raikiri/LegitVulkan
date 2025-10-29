@@ -56,6 +56,7 @@ namespace legit
     inline uint32_t GetDynamicMemoryAlignment();
     inline legit::DescriptorSetCache* GetDescriptorSetCache();
     inline legit::PipelineCache* GetPipelineCache();
+    inline vk::detail::DispatchLoaderDynamic GetLoader();
   private:
 
     static inline vk::UniqueInstance CreateInstance(Span<const char*> instanceExtensions, Span<const char*> validationLayers);

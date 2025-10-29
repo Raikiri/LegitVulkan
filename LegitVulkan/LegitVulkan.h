@@ -49,3 +49,4 @@
 
 #include "StagedResources.h"
 #include "ImageLoader.h"
+#include "Texture.h"

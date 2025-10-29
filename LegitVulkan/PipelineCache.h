@@ -12,6 +12,7 @@ namespace legit
     struct PipelineInfo
     {
       vk::PipelineLayout pipelineLayout;
+      legit::ShaderProgram *shaderProgram;
       std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
     };
 
@@ -53,6 +54,7 @@ namespace legit
       commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->GetHandle());
 
       pipelineInfo.pipelineLayout = pipeline->GetLayout();
+      pipelineInfo.shaderProgram = shaderProgram;
       return pipelineInfo;
     }
 

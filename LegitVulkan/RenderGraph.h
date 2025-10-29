@@ -592,9 +592,10 @@ namespace legit
     {
       struct DescriptorSetBindings
       {
-        DescriptorSetBindings(legit::ShaderProgram *shaderProgram, size_t setIndex) :
+        DescriptorSetBindings(const legit::PipelineCache::PipelineInfo &pipelineInfo, size_t setIndex) :
           setIndex(setIndex),
-          shaderDataSetInfo(shaderProgram->GetSetInfo(setIndex))
+          shaderDataSetInfo(pipelineInfo.shaderProgram->GetSetInfo(setIndex)),
+          pipelineLayout(pipelineInfo.pipelineLayout)
         {
         }
         DescriptorSetBindings &AddImageSamplerBinding(std::string name, legit::ImageView *imageView, legit::Sampler *sampler)
@@ -602,8 +603,28 @@ namespace legit
           imageSamplerBindings.push_back(shaderDataSetInfo->MakeImageSamplerBinding(name, imageView, sampler));
           return *this;
         }
+        
+        struct UniformBinding
+        {
+          std::string name;
+          const void *data;
+          size_t size;
+        };
+        
+        template<typename T>
+        DescriptorSetBindings &AddUniformBinding(std::string name, const T *uniformData)
+        {
+          UniformBinding uniformBinding;
+          uniformBinding.name = name;
+          uniformBinding.data = uniformData;
+          uniformBinding.size = sizeof(T);
+          uniformBindings.emplace_back(std::move(uniformBinding));
+          return *this;
+        }
         std::vector<legit::ImageSamplerBinding> imageSamplerBindings;
+        std::vector<UniformBinding> uniformBindings;
         const legit::DescriptorSetLayoutKey *shaderDataSetInfo;
+        const vk::PipelineLayout pipelineLayout;
         size_t setIndex;
       };
       using BindDescriptorSetFunc = std::function<void(const DescriptorSetBindings &bindings)>;
@@ -621,15 +642,27 @@ namespace legit
       }
     private:
       BindDescriptorSetFunc bindDescritproSetFunc;
-      std::vector<legit::ImageView *> resolvedImageViews;
-      std::vector<legit::Buffer *> resolvedBuffers;
       vk::CommandBuffer commandBuffer;
       friend class RenderGraph;
     };
     
-    struct RenderPass2Desc
+    struct RenderPassContext2 : public PassContext2
     {
-      RenderPass2Desc()
+      RenderPassContext2(PassContext2::BindDescriptorSetFunc func) : PassContext2(func)
+      {
+      }
+      legit::RenderPass *GetRenderPass()
+      {
+        return renderPass;
+      }
+    private:
+      legit::RenderPass *renderPass;
+      friend class RenderGraph;
+    };
+    
+    struct RenderPassDesc2
+    {
+      RenderPassDesc2()
       {
         profilerTaskName = "RenderPass";
         profilerTaskColor = glm::packUnorm4x8(glm::vec4(1.0f, 0.5f, 0.0f, 1.0f));
@@ -640,7 +673,7 @@ namespace legit
         vk::AttachmentLoadOp loadOp;
         vk::ClearValue clearValue;
       };
-      RenderPass2Desc &SetColorAttachments(
+      RenderPassDesc2 &SetColorAttachments(
         const std::vector<ImageView*> _colorAttachments, 
         vk::AttachmentLoadOp _loadOp = vk::AttachmentLoadOp::eDontCare, 
         vk::ClearValue _clearValue = vk::ClearColorValue(std::array<float, 4>{1.0f, 0.5f, 0.0f, 1.0f}))
@@ -652,13 +685,13 @@ namespace legit
         }
         return *this;
       }
-      RenderPass2Desc &SetColorAttachments(std::vector<Attachment> &&_colorAttachments)
+      RenderPassDesc2 &SetColorAttachments(std::vector<Attachment> &&_colorAttachments)
       {
         this->colorAttachments = std::move(_colorAttachments);
         return *this;
       }
 
-      RenderPass2Desc &SetDepthAttachment(
+      RenderPassDesc2 &SetDepthAttachment(
         ImageView *_depthAttachmentView,
         vk::AttachmentLoadOp _loadOp = vk::AttachmentLoadOp::eDontCare,
         vk::ClearValue _clearValue = vk::ClearDepthStencilValue(1.0f, 0))
@@ -668,23 +701,23 @@ namespace legit
         this->depthAttachment.clearValue = _clearValue;
         return *this;
       }
-      RenderPass2Desc &SetDepthAttachment(Attachment _depthAttachment)
+      RenderPassDesc2 &SetDepthAttachment(Attachment _depthAttachment)
       {
         this->depthAttachment = _depthAttachment;
         return *this;
       }
-      RenderPass2Desc &SetRenderAreaExtent(vk::Extent2D _renderAreaExtent)
+      RenderPassDesc2 &SetRenderAreaExtent(vk::Extent2D _renderAreaExtent)
       {
         this->renderAreaExtent = _renderAreaExtent;
         return *this;
       }
 
-      RenderPass2Desc &SetRecordFunc(std::function<void(RenderPassContext)> _recordFunc)
+      RenderPassDesc2 &SetRecordFunc(std::function<void(RenderPassContext2)> _recordFunc)
       {
         this->recordFunc = _recordFunc;
         return *this;
       }
-      RenderPass2Desc &SetProfilerInfo(uint32_t taskColor, std::string taskName)
+      RenderPassDesc2 &SetProfilerInfo(uint32_t taskColor, std::string taskName)
       {
         this->profilerTaskColor = taskColor;
         this->profilerTaskName = taskName;
@@ -700,7 +733,7 @@ namespace legit
       std::vector<ImageView*> inoutStorageImages;
 
       vk::Extent2D renderAreaExtent;
-      std::function<void(RenderPassContext)> recordFunc;
+      std::function<void(RenderPassContext2)> recordFunc;
 
       std::string profilerTaskName;
       uint32_t profilerTaskColor;
@@ -737,6 +770,16 @@ namespace legit
       AddTask(task);
 
       renderPassDescs.emplace_back(renderPassDesc);
+    }
+    
+    void AddPass(RenderPassDesc2 &renderPassDesc2)
+    {
+      Task task;
+      task.type = Task::Types::RenderPass2;
+      task.index = renderPassDescs2.size();
+      AddTask(task);
+
+      renderPassDescs2.emplace_back(renderPassDesc2);
     }
 
     void Clear()
@@ -1077,6 +1120,10 @@ namespace legit
             renderPassDesc.recordFunc(passContext);
             framebufferCache.EndPass(commandBuffer);
           }break;
+          case Task::Types::RenderPass2:
+          {
+            assert(!!"Old implementation");
+          }break;
           case Task::Types::ComputePass:
           {
             auto &computePassDesc = computePassDescs[task.index];
@@ -1269,7 +1316,7 @@ namespace legit
       tasks.clear();
     }
 
-    void Execute(vk::CommandBuffer commandBuffer, legit::CpuProfiler *cpuProfiler, legit::GpuProfiler *gpuProfiler)
+    void Execute(legit::DescriptorSetCache *descriptorSetCache, legit::ShaderMemoryPool *memoryPool, vk::CommandBuffer commandBuffer, legit::CpuProfiler *cpuProfiler, legit::GpuProfiler *gpuProfiler)
     {
       ResolveImages();
       ResolveImageViews();
@@ -1384,6 +1431,115 @@ namespace legit
             framebufferCache.BeginPass(commandBuffer, colorAttachments, depthPresent ? (&depthAttachment) : nullptr, renderPass, renderPassDesc.renderAreaExtent);
             passContext.commandBuffer = commandBuffer;
             renderPassDesc.recordFunc(passContext);
+            framebufferCache.EndPass(commandBuffer);
+          }break;
+          case Task::Types::RenderPass2:
+          {
+            auto &renderPassDesc2 = renderPassDescs2[task.index];
+            auto profilerTask = CreateProfilerTask(renderPassDesc2);
+            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
+            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
+            
+            RenderPassContext2 passContext([commandBuffer, descriptorSetCache, memoryPool, &stateTracker, &renderPassDesc2](const PassContext2::DescriptorSetBindings &bindings)
+            {
+              auto uniforms = memoryPool->BeginSet(bindings.shaderDataSetInfo);
+              for(auto uniformBinding : bindings.uniformBindings)
+              {
+                void *uniformData = memoryPool->GetUniformBufferData(uniformBinding.name, uniformBinding.size);
+                memcpy(uniformData, uniformBinding.data, uniformBinding.size);
+              }
+              memoryPool->EndSet();
+
+              auto descriptoSetBindings = legit::DescriptorSetBindings()
+                .SetUniformBufferBindings(uniforms.uniformBufferBindings)
+                //.SetStorageBufferBindings(bindings.)
+                .SetImageSamplerBindings(bindings.imageSamplerBindings);
+
+              std::vector<StateTracker::ImageBarrier> imageBarriers;
+              for (auto binding : bindings.imageSamplerBindings)
+              {
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderRead));
+              }
+
+              // for (auto &binding : bindings.inoutStorageImages)
+              // {
+              //   AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderReadWrite));
+              // }
+
+
+              std::vector<StateTracker::BufferBarrier> bufferBarriers;
+              // for (auto storageBuffer : bindings.inoutStorageBuffers)
+              // {
+              //   AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer, BufferUsageTypes::GraphicsShaderReadWrite));
+              // }
+
+              SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
+
+              auto descriptorSet = descriptorSetCache->GetDescriptorSet(*bindings.shaderDataSetInfo, descriptoSetBindings);
+              commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, bindings.pipelineLayout, bindings.setIndex, { descriptorSet }, { uniforms.dynamicOffset });
+            });
+
+            std::vector<StateTracker::ImageBarrier> imageBarriers;
+            for (auto imageView : renderPassDesc2.inputImageViews)
+            {
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::GraphicsShaderRead));
+            }
+
+            for (auto &imageView : renderPassDesc2.inoutStorageImages)
+            {
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::GraphicsShaderReadWrite));
+            }
+
+            for (auto colorAttachment : renderPassDesc2.colorAttachments)
+            {
+              auto imageView = colorAttachment.imageView;
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::ColorAttachment));
+            }
+
+            if(auto imageView = renderPassDesc2.depthAttachment.imageView)
+            {
+              AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(imageView, ImageUsageTypes::DepthAttachment));
+            }
+
+            std::vector<StateTracker::BufferBarrier> bufferBarriers;
+            for (auto storageBuffer : renderPassDesc2.vertexBuffers)
+            {
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer, BufferUsageTypes::VertexBuffer));
+            }
+
+            for (auto storageBuffer : renderPassDesc2.inoutStorageBuffers)
+            {
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer, BufferUsageTypes::GraphicsShaderReadWrite));
+            }
+
+            SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
+            
+            std::vector<FramebufferCache::Attachment> colorAttachments;
+            FramebufferCache::Attachment depthAttachment;
+
+            legit::RenderPassCache::RenderPassKey renderPassKey;
+
+            for (auto &attachment : renderPassDesc2.colorAttachments)
+            {
+              renderPassKey.colorAttachmentDescs.push_back({attachment.imageView->GetImageData()->GetFormat(), attachment.loadOp, attachment.clearValue });
+              colorAttachments.push_back({ attachment.imageView, attachment.clearValue });
+            }
+            if (auto imageView = renderPassDesc2.depthAttachment.imageView)
+            {
+              renderPassKey.depthAttachmentDesc = { imageView->GetImageData()->GetFormat(), renderPassDesc2.depthAttachment.loadOp, renderPassDesc2.depthAttachment.clearValue };
+              depthAttachment = { imageView, renderPassDesc2.depthAttachment.clearValue };
+            }
+            else
+            {
+              renderPassKey.depthAttachmentDesc.format = vk::Format::eUndefined;
+            }
+
+            auto renderPass = renderPassCache.GetRenderPass(renderPassKey);
+            passContext.renderPass = renderPass;
+
+            framebufferCache.BeginPass(commandBuffer, colorAttachments, renderPassDesc2.depthAttachment.imageView ? (&depthAttachment) : nullptr, renderPass, renderPassDesc2.renderAreaExtent);
+            passContext.commandBuffer = commandBuffer;
+            renderPassDesc2.recordFunc(passContext);
             framebufferCache.EndPass(commandBuffer);
           }break;
           case Task::Types::ComputePass:
@@ -2032,6 +2188,7 @@ namespace legit
 
 
     std::vector<RenderPassDesc> renderPassDescs;
+    std::vector<RenderPassDesc2> renderPassDescs2;
     std::vector<ComputePassDesc> computePassDescs;
     std::vector<TransferPassDesc> transferPassDescs;
 
@@ -2045,6 +2202,7 @@ namespace legit
       enum struct Types
       {
         RenderPass,
+        RenderPass2,
         ComputePass,
         TransferPass,
         ImagePresent,
@@ -2069,6 +2227,15 @@ namespace legit
       task.color = renderPassDesc.profilerTaskColor;
       return task;
     }
+    legit::ProfilerTask CreateProfilerTask(const RenderPassDesc2 &renderPassDesc2)
+    {
+      legit::ProfilerTask task;
+      task.startTime = -1.0f;
+      task.endTime = -1.0f;
+      task.name = renderPassDesc2.profilerTaskName;
+      task.color = renderPassDesc2.profilerTaskColor;
+      return task;
+    }    
     legit::ProfilerTask CreateProfilerTask(const ComputePassDesc &computePassDesc)
     {
       legit::ProfilerTask task;

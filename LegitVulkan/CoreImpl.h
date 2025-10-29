@@ -175,6 +175,12 @@ namespace legit
   {
     return pipelineCache.get();
   }
+  
+  vk::detail::DispatchLoaderDynamic Core::GetLoader()
+  {
+    return loader;
+  }
+
   vk::UniqueInstance Core::CreateInstance(Span<const char*> instanceExtensions, Span<const char*> validationLayers)
   {
     auto appInfo = vk::ApplicationInfo()

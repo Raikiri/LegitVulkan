@@ -931,7 +931,7 @@ namespace legit
     {
       return combinedDescriptorSetLayoutKeys.size();
     }
-    const DescriptorSetLayoutKey *GetSetInfo(size_t setIndex)
+    const DescriptorSetLayoutKey *GetSetInfo(size_t setIndex) const
     {
       return &combinedDescriptorSetLayoutKeys[setIndex];
     }

@@ -173,6 +173,18 @@ namespace legit
     commandBuffer.pipelineBarrier(srcImageAccessPattern.stage, dstImageAccessPattern.stage, vk::DependencyFlags(), {}, {}, { imageBarrier });
   }
 
+  static uint32_t CountMips(glm::uvec2 baseSize)
+  {
+    uint32_t count = 1;
+    for(;baseSize.x > 1 || baseSize.y > 1;)
+    {
+      if(baseSize.x > 1u) baseSize.x /= 2u;
+      if(baseSize.y > 1u) baseSize.y /= 2u;
+      count++;
+    }
+    return count;
+  }
+    
   class Image
   {
   public:
@@ -209,7 +221,7 @@ namespace legit
       auto imageInfo = vk::ImageCreateInfo()
         .setImageType(vk::ImageType::e2D)
         .setExtent(vk::Extent3D(size.x, size.y, 1))
-        .setMipLevels(mipsCount)
+        .setMipLevels(mipsCount == uint32_t(-1) ? CountMips(size) : mipsCount)
         .setArrayLayers(arrayLayersCount)
         .setFormat(format)
         .setInitialLayout(layout) //images must be created in undefined layout
@@ -245,7 +257,7 @@ namespace legit
       auto imageInfo = vk::ImageCreateInfo()
         .setImageType(vk::ImageType::e2D)
         .setExtent(vk::Extent3D(size.x, size.y, 1))
-        .setMipLevels(mipsCount)
+        .setMipLevels(mipsCount == uint32_t(-1) ? CountMips(size) : mipsCount)
         .setArrayLayers(6)
         .setFormat(format)
         .setInitialLayout(layout) //images must be created in undefined layout
