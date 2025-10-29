@@ -606,16 +606,21 @@ namespace legit
         const legit::DescriptorSetLayoutKey *shaderDataSetInfo;
         size_t setIndex;
       };
-      
+      using BindDescriptorSetFunc = std::function<void(const DescriptorSetBindings &bindings)>;
+      PassContext2(BindDescriptorSetFunc bindDescritproSetFunc) :
+        bindDescritproSetFunc(bindDescritproSetFunc)
+      {
+      }
       void BindDescriptorSet(const DescriptorSetBindings &bindings)
       {
-        
+        bindDescritproSetFunc(bindings);
       }
       vk::CommandBuffer GetCommandBuffer()
       {
         return commandBuffer;
       }
     private:
+      BindDescriptorSetFunc bindDescritproSetFunc;
       std::vector<legit::ImageView *> resolvedImageViews;
       std::vector<legit::Buffer *> resolvedBuffers;
       vk::CommandBuffer commandBuffer;
