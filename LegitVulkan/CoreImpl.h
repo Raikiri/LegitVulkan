@@ -181,6 +181,11 @@ namespace legit
     return loader;
   }
 
+  QueueFamilyIndices Core::GetQueueFamilyIndices()
+  {
+    return queueFamilyIndices;
+  }
+
   vk::UniqueInstance Core::CreateInstance(Span<const char*> instanceExtensions, Span<const char*> validationLayers)
   {
     auto appInfo = vk::ApplicationInfo()

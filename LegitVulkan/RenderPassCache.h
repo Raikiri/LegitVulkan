@@ -44,6 +44,9 @@ namespace legit
     {
       legit::Framebuffer *framebuffer;
       legit::RenderPass *renderPass;
+      
+      vk::Viewport viewport;
+      vk::Rect2D scissorRect;
     };
 
     struct Attachment
@@ -52,9 +55,9 @@ namespace legit
       vk::ClearValue clearValue;
     };
 
-    PassInfo BeginPass(vk::CommandBuffer commandBuffer, const std::vector<Attachment> colorAttachments, Attachment *depthAttachment, legit::RenderPass *renderPass, vk::Extent2D renderAreaExtent)
+    PassInfo BeginPass(vk::CommandBuffer commandBuffer, const std::vector<Attachment> colorAttachments, Attachment *depthAttachment, legit::RenderPass *renderPass, vk::Extent2D renderAreaExtent, vk::SubpassContents contents = vk::SubpassContents::eInline)
     {
-      PassInfo passInfo;
+      PassInfo passInfo = GetPassInfo(colorAttachments,  depthAttachment, renderPass, renderAreaExtent);
 
 
       FramebufferKey framebufferKey;
@@ -65,40 +68,27 @@ namespace legit
       for (auto attachment : colorAttachments)
       {
         clearValues.push_back(attachment.clearValue);
-        framebufferKey.colorAttachmentViews[attachmentsUsed++] = attachment.imageView;
       }
       if (depthAttachment)
       {
-        framebufferKey.depthAttachmentView = depthAttachment->imageView;
         clearValues.push_back(depthAttachment->clearValue);
       }
-
-      passInfo.renderPass = renderPass;
-
-      framebufferKey.extent = renderAreaExtent;
-      framebufferKey.renderPass = renderPass->GetHandle();
-      legit::Framebuffer *framebuffer = GetFramebuffer(framebufferKey);
-      passInfo.framebuffer = framebuffer;
 
 
       vk::Rect2D rect = vk::Rect2D(vk::Offset2D(), renderAreaExtent);
       auto passBeginInfo = vk::RenderPassBeginInfo()
         .setRenderPass(renderPass->GetHandle())
-        .setFramebuffer(framebuffer->GetHandle())
+        .setFramebuffer(passInfo.framebuffer->GetHandle())
         .setRenderArea(rect)
         .setClearValueCount(uint32_t(clearValues.size()))
         .setPClearValues(clearValues.data());
 
-      commandBuffer.beginRenderPass(passBeginInfo, vk::SubpassContents::eInline);
-
-      auto viewport = vk::Viewport()
-        .setWidth(float(renderAreaExtent.width))
-        .setHeight(float(renderAreaExtent.height))
-        .setMinDepth(0.0f)
-        .setMaxDepth(1.0f);
-
-      commandBuffer.setViewport(0, { viewport });
-      commandBuffer.setScissor(0, { vk::Rect2D(vk::Offset2D(), renderAreaExtent) });
+      commandBuffer.beginRenderPass(passBeginInfo, contents);
+      if(contents != vk::SubpassContents::eSecondaryCommandBuffers)
+      {
+        commandBuffer.setViewport(0, { passInfo.viewport });
+        commandBuffer.setScissor(0, { passInfo.scissorRect });
+      }
 
       return passInfo;
     }
@@ -107,6 +97,40 @@ namespace legit
     {
       commandBuffer.endRenderPass();
     }
+    
+    PassInfo GetPassInfo(const std::vector<Attachment> colorAttachments, Attachment *depthAttachment, legit::RenderPass *renderPass, vk::Extent2D renderAreaExtent)
+    {
+      PassInfo passInfo;
+      FramebufferKey framebufferKey;
+      size_t attachmentsUsed = 0;
+      for (auto attachment : colorAttachments)
+      {
+        framebufferKey.colorAttachmentViews[attachmentsUsed++] = attachment.imageView;
+      }
+      if (depthAttachment)
+      {
+        framebufferKey.depthAttachmentView = depthAttachment->imageView;
+      }
+
+      passInfo.renderPass = renderPass;
+
+      framebufferKey.extent = renderAreaExtent;
+      framebufferKey.renderPass = renderPass->GetHandle();
+      legit::Framebuffer *framebuffer = GetFramebuffer(framebufferKey);
+      passInfo.framebuffer = framebuffer;
+        
+      passInfo.viewport = vk::Viewport()
+        .setWidth(float(renderAreaExtent.width))
+        .setHeight(float(renderAreaExtent.height))
+        .setMinDepth(0.0f)
+        .setMaxDepth(1.0f);
+        
+      passInfo.scissorRect = vk::Rect2D(vk::Offset2D(), renderAreaExtent);
+
+
+      return passInfo;
+    }
+
 
     FramebufferCache(vk::Device _logicalDevice) : logicalDevice(_logicalDevice)
     {

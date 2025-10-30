@@ -57,6 +57,7 @@ namespace legit
     inline legit::DescriptorSetCache* GetDescriptorSetCache();
     inline legit::PipelineCache* GetPipelineCache();
     inline vk::detail::DispatchLoaderDynamic GetLoader();
+    inline QueueFamilyIndices GetQueueFamilyIndices();
   private:
 
     static inline vk::UniqueInstance CreateInstance(Span<const char*> instanceExtensions, Span<const char*> validationLayers);

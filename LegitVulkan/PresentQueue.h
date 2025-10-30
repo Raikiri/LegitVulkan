@@ -133,6 +133,12 @@ namespace legit
         currFrame.gpuProfiler->GatherTimestamps();
       }
 
+      currFrame.transientCommandPool.reset();
+      auto commandPoolInfo = vk::CommandPoolCreateInfo()
+        .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer | vk::CommandPoolCreateFlagBits::eTransient)
+        .setQueueFamilyIndex(core->GetQueueFamilyIndices().graphicsFamilyIndex);
+      currFrame.transientCommandPool = core->GetLogicalDevice().createCommandPoolUnique(commandPoolInfo);
+      
       core->GetRenderGraph()->AddPass(legit::RenderGraph::FrameSyncBeginPassDesc());
 
       memoryPool->MapBuffer(currFrame.shaderMemoryBuffer.get());
@@ -157,7 +163,7 @@ namespace legit
       currFrame.commandBuffer->begin(bufferBeginInfo);
       {
         auto gpuFrame = currFrame.gpuProfiler->StartScopedFrame(currFrame.commandBuffer.get());
-        core->GetRenderGraph()->Execute(core->GetDescriptorSetCache(), memoryPool.get(), currFrame.commandBuffer.get(), &cpuProfiler, currFrame.gpuProfiler.get());
+        core->GetRenderGraph()->Execute(core->GetLogicalDevice(), currFrame.transientCommandPool.get(), core->GetDescriptorSetCache(), memoryPool.get(), currFrame.commandBuffer.get(), &cpuProfiler, currFrame.gpuProfiler.get());
       }
       currFrame.commandBuffer->end();
 
@@ -226,6 +232,7 @@ namespace legit
       vk::UniqueFence submitToRecordFence;
 
       vk::UniqueCommandBuffer commandBuffer;
+      vk::UniqueCommandPool transientCommandPool;
       std::unique_ptr<legit::Buffer> shaderMemoryBuffer;
       std::unique_ptr<legit::GpuProfiler> gpuProfiler;
     };
