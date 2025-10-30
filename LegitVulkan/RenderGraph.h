@@ -594,13 +594,18 @@ namespace legit
       {
         DescriptorSetBindings(const legit::PipelineCache::PipelineInfo &pipelineInfo, size_t setIndex) :
           setIndex(setIndex),
-          shaderDataSetInfo(pipelineInfo.shaderProgram->GetSetInfo(setIndex)),
+          shaderDataSetInfo(pipelineInfo.shaderProgram ? pipelineInfo.shaderProgram->GetSetInfo(setIndex) : pipelineInfo.computeShader->GetSetInfo(setIndex)),
           pipelineLayout(pipelineInfo.pipelineLayout)
         {
         }
         DescriptorSetBindings &AddImageSamplerBinding(std::string name, legit::ImageView *imageView, legit::Sampler *sampler)
         {
           imageSamplerBindings.push_back(shaderDataSetInfo->MakeImageSamplerBinding(name, imageView, sampler));
+          return *this;
+        }
+        DescriptorSetBindings &AddStorageImageBinding(std::string name, legit::ImageView *imageView)
+        {
+          storageImageBindings.push_back(shaderDataSetInfo->MakeStorageImageBinding(name, imageView));
           return *this;
         }
         
@@ -828,6 +833,32 @@ namespace legit
       uint32_t profilerTaskColor;
     };
 
+    struct ComputePassDesc2
+    {
+      ComputePassDesc2()
+      {
+        profilerTaskName = "ComputePass2";
+        profilerTaskColor = glm::packUnorm4x8(glm::vec4(0.0f, 0.5f, 1.0f, 1.0f));
+      }
+
+      ComputePassDesc2 &SetRecordFunc(std::function<void(PassContext2)> _recordFunc)
+      {
+        this->recordFunc = _recordFunc;
+        return *this;
+      }
+      ComputePassDesc2 &SetProfilerInfo(uint32_t taskColor, std::string taskName)
+      {
+        this->profilerTaskColor = taskColor;
+        this->profilerTaskName = taskName;
+        return *this;
+      }
+
+      std::function<void(PassContext2)> recordFunc;
+
+      std::string profilerTaskName;
+      uint32_t profilerTaskColor;
+    };
+    
     void AddPass(ComputePassDesc &computePassDesc)
     {
       Task task;
@@ -838,6 +869,16 @@ namespace legit
       computePassDescs.emplace_back(computePassDesc);
     }
 
+    void AddPass(ComputePassDesc2 &computePassDesc2)
+    {
+      Task task;
+      task.type = Task::Types::ComputePass2;
+      task.index = computePassDescs2.size();
+      AddTask(task);
+
+      computePassDescs2.emplace_back(computePassDesc2);
+    }
+    
     struct TransferPassDesc
     {
       TransferPassDesc()
@@ -1178,6 +1219,10 @@ namespace legit
             if(computePassDesc.recordFunc)
               computePassDesc.recordFunc(passContext);
           }break;
+          case Task::Types::ComputePass2:
+          {
+            assert(!!"Not implemented");
+          }break;          
           case Task::Types::TransferPass:
           {
             auto& transferPassDesc = transferPassDescs[task.index];
@@ -1458,8 +1503,9 @@ namespace legit
 
               auto descriptoSetBindings = legit::DescriptorSetBindings()
                 .SetUniformBufferBindings(uniforms.uniformBufferBindings)
-                //.SetStorageBufferBindings(bindings.)
-                .SetImageSamplerBindings(bindings.imageSamplerBindings);
+                .SetImageSamplerBindings(bindings.imageSamplerBindings)
+                .SetStorageImageBindings(bindings.storageImageBindings)
+                .SetStorageBufferBindings(bindings.storageBufferBindings);
 
               for (auto binding : bindings.imageSamplerBindings)
               {
@@ -1593,6 +1639,73 @@ namespace legit
             passContext.commandBuffer = commandBuffer;
             if(computePassDesc.recordFunc)
               computePassDesc.recordFunc(passContext);
+          }break;
+          case Task::Types::ComputePass2:
+          {
+            auto &computePassDesc2 = computePassDescs2[task.index];
+            auto profilerTask = CreateProfilerTask(computePassDesc2);
+            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
+            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
+            
+            auto commandBufferAllocateInfo = vk::CommandBufferAllocateInfo()
+              .setCommandPool(transientCommandPool)
+              .setLevel(vk::CommandBufferLevel::eSecondary)
+              .setCommandBufferCount(1u);
+            auto transientCommandBuffer = logicalDevice.allocateCommandBuffers(commandBufferAllocateInfo)[0];
+
+            std::vector<StateTracker::ImageBarrier> imageBarriers;
+            std::vector<StateTracker::BufferBarrier> bufferBarriers;
+
+            PassContext2 passContext([&](const PassContext2::DescriptorSetBindings &bindings)
+            {
+              auto uniforms = memoryPool->BeginSet(bindings.shaderDataSetInfo);
+              for(auto uniformBinding : bindings.uniformBindings)
+              {
+                void *uniformData = memoryPool->GetUniformBufferData(uniformBinding.name, uniformBinding.size);
+                memcpy(uniformData, uniformBinding.data, uniformBinding.size);
+              }
+              memoryPool->EndSet();
+
+              auto descriptoSetBindings = legit::DescriptorSetBindings()
+                .SetUniformBufferBindings(uniforms.uniformBufferBindings)
+                .SetImageSamplerBindings(bindings.imageSamplerBindings)
+                .SetStorageImageBindings(bindings.storageImageBindings)
+                .SetStorageBufferBindings(bindings.storageBufferBindings);
+
+              for (auto binding : bindings.imageSamplerBindings)
+              {
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderRead));
+              }
+
+              for (auto &binding : bindings.storageImageBindings)
+              {
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderReadWrite));
+              }
+
+              for (auto storageBuffer : bindings.storageBufferBindings)
+              {
+                AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer.buffer, BufferUsageTypes::GraphicsShaderReadWrite));
+              }
+
+              auto descriptorSet = descriptorSetCache->GetDescriptorSet(*bindings.shaderDataSetInfo, descriptoSetBindings);
+              transientCommandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, bindings.pipelineLayout, bindings.setIndex, { descriptorSet }, { uniforms.dynamicOffset });
+            });
+
+            passContext.commandBuffer = transientCommandBuffer;
+
+            auto inheritanceInfo = vk::CommandBufferInheritanceInfo();
+            auto oneTimeBeginInfo = vk::CommandBufferBeginInfo()
+              .setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)
+              .setPInheritanceInfo(&inheritanceInfo);      
+            passContext.commandBuffer.begin(oneTimeBeginInfo);
+            {
+              computePassDesc2.recordFunc(passContext);
+            }
+            passContext.commandBuffer.end();            
+            
+            SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
+
+            commandBuffer.executeCommands({passContext.commandBuffer});
           }break;
           case Task::Types::TransferPass:
           {
@@ -2190,6 +2303,7 @@ namespace legit
     std::vector<RenderPassDesc> renderPassDescs;
     std::vector<RenderPassDesc2> renderPassDescs2;
     std::vector<ComputePassDesc> computePassDescs;
+    std::vector<ComputePassDesc2> computePassDescs2;
     std::vector<TransferPassDesc> transferPassDescs;
 
 
@@ -2204,6 +2318,7 @@ namespace legit
         RenderPass,
         RenderPass2,
         ComputePass,
+        ComputePass2,
         TransferPass,
         ImagePresent,
         FrameSyncBegin,
@@ -2243,6 +2358,15 @@ namespace legit
       task.endTime = -1.0f;
       task.name = computePassDesc.profilerTaskName;
       task.color = computePassDesc.profilerTaskColor;
+      return task;
+    }
+    legit::ProfilerTask CreateProfilerTask(const ComputePassDesc2 &computePassDesc2)
+    {
+      legit::ProfilerTask task;
+      task.startTime = -1.0f;
+      task.endTime = -1.0f;
+      task.name = computePassDesc2.profilerTaskName;
+      task.color = computePassDesc2.profilerTaskColor;
       return task;
     }
     legit::ProfilerTask CreateProfilerTask(const TransferPassDesc& transferPassDesc)
