@@ -1523,7 +1523,17 @@ namespace legit
               }
 
               auto descriptorSet = descriptorSetCache->GetDescriptorSet(*bindings.shaderDataSetInfo, descriptoSetBindings);
-              transientCommandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, bindings.pipelineLayout, bindings.setIndex, { descriptorSet }, { uniforms.dynamicOffset });
+              std::vector<uint32_t> dynamicOffsets;
+              if(bindings.uniformBindings.size() > 0)
+              {
+                dynamicOffsets.push_back(uniforms.dynamicOffset);
+              }
+              transientCommandBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                bindings.pipelineLayout,
+                bindings.setIndex,
+                { descriptorSet },
+                dynamicOffsets);
             });
             // for (auto storageBuffer : bindings.vertexBuffers)
             // {
@@ -1688,7 +1698,13 @@ namespace legit
               }
 
               auto descriptorSet = descriptorSetCache->GetDescriptorSet(*bindings.shaderDataSetInfo, descriptoSetBindings);
-              transientCommandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, bindings.pipelineLayout, bindings.setIndex, { descriptorSet }, { uniforms.dynamicOffset });
+
+              std::vector<uint32_t> dynamicOffsets;
+              if(bindings.uniformBindings.size() > 0)
+              {
+                dynamicOffsets.push_back(uniforms.dynamicOffset);
+              }
+              transientCommandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, bindings.pipelineLayout, bindings.setIndex, { descriptorSet }, dynamicOffsets);
             });
 
             passContext.commandBuffer = transientCommandBuffer;
