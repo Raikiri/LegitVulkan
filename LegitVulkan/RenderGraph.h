@@ -735,7 +735,7 @@ namespace legit
       Attachment depthAttachment;
 
 
-      vk::Extent2D renderAreaExtent;
+      vk::Extent2D renderAreaExtent = {0, 0};
       std::function<void(RenderPassContext2)> recordFunc;
 
       std::string profilerTaskName;
@@ -1575,7 +1575,22 @@ namespace legit
             passContext.renderPass = renderPass;
             passContext.commandBuffer = transientCommandBuffer;
 
-            auto passInfo = framebufferCache.GetPassInfo(colorAttachments, renderPassDesc2.depthAttachment.imageView ? (&depthAttachment) : nullptr, renderPass, renderPassDesc2.renderAreaExtent);
+            auto renderAreaExtent = renderPassDesc2.renderAreaExtent;
+            if(renderAreaExtent.width == 0 && renderAreaExtent.height == 0)
+            {
+              if(colorAttachments.size() > 0)
+              {
+                auto mipSize = colorAttachments[0].imageView->GetBaseSize();
+                renderAreaExtent = vk::Extent2D(mipSize.x, mipSize.y);
+              }else
+              {
+                assert(depthAttachment.imageView);
+                auto mipSize = depthAttachment.imageView->GetBaseSize();
+                renderAreaExtent = vk::Extent2D(mipSize.x, mipSize.y);                
+              }
+            }
+            
+            auto passInfo = framebufferCache.GetPassInfo(colorAttachments, renderPassDesc2.depthAttachment.imageView ? (&depthAttachment) : nullptr, renderPass, renderAreaExtent);
             auto inheritanceInfo = vk::CommandBufferInheritanceInfo()
               .setRenderPass(renderPass->GetHandle())
               .setFramebuffer(passInfo.framebuffer->GetHandle());
@@ -1592,7 +1607,7 @@ namespace legit
             
             SubmitBarriers(commandBuffer, imageBarriers, bufferBarriers);
 
-            framebufferCache.BeginPass(commandBuffer, colorAttachments, renderPassDesc2.depthAttachment.imageView ? (&depthAttachment) : nullptr, renderPass, renderPassDesc2.renderAreaExtent, vk::SubpassContents::eSecondaryCommandBuffers);
+            framebufferCache.BeginPass(commandBuffer, colorAttachments, renderPassDesc2.depthAttachment.imageView ? (&depthAttachment) : nullptr, renderPass, renderAreaExtent, vk::SubpassContents::eSecondaryCommandBuffers);
             {
               commandBuffer.executeCommands({passContext.commandBuffer});
             }
