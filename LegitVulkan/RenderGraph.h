@@ -608,6 +608,11 @@ namespace legit
           storageImageBindings.push_back(shaderDataSetInfo->MakeStorageImageBinding(name, imageView));
           return *this;
         }
+        DescriptorSetBindings &AddStorageBufferBinding(std::string name, legit::Buffer *buffer)
+        {
+          storageBufferBindings.push_back(shaderDataSetInfo->MakeStorageBufferBinding(name, buffer));
+          return *this;
+        }
         
         struct UniformBinding
         {
