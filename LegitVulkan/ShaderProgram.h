@@ -51,6 +51,36 @@ namespace legit
     uint32_t shaderBindingId;
   };
 
+  struct TextureBinding
+  {
+    TextureBinding() : imageView(nullptr) {}
+    TextureBinding(legit::ImageView *_imageView, uint32_t _shaderBindingId) : imageView(_imageView), shaderBindingId(_shaderBindingId)
+    {
+      assert(_imageView);
+    }
+    bool operator < (const ImageSamplerBinding &other) const
+    {
+      return std::tie(imageView, shaderBindingId) < std::tie(other.imageView, other.shaderBindingId);
+    }
+    legit::ImageView *imageView;
+    uint32_t shaderBindingId;
+  };
+
+  struct SamplerBinding
+  {
+    SamplerBinding() : sampler(nullptr) {}
+    SamplerBinding(legit::Sampler *_sampler, uint32_t _shaderBindingId) : sampler(_sampler), shaderBindingId(_shaderBindingId)
+    {
+      assert(_sampler);
+    }
+    bool operator < (const ImageSamplerBinding &other) const
+    {
+      return std::tie(sampler, shaderBindingId) < std::tie(other.sampler, other.shaderBindingId);
+    }
+    legit::Sampler *sampler;
+    uint32_t shaderBindingId;
+  };
+
   struct UniformBufferBinding
   {
     UniformBufferBinding() : buffer(nullptr), offset(-1), size(-1) {}
@@ -110,6 +140,10 @@ namespace legit
     using UniformBufferId = ShaderResourceId<UniformBufferBase>;
     struct ImageSamplerBase;
     using ImageSamplerId = ShaderResourceId<ImageSamplerBase>;
+    struct TextureBase;
+    using TextureId = ShaderResourceId<TextureBase>;
+    struct SamplerBase;
+    using SamplerId = ShaderResourceId<SamplerBase>;
     struct StorageBufferBase;
     using StorageBufferId = ShaderResourceId<StorageBufferBase>;
     struct StorageImageBase;
@@ -145,6 +179,28 @@ namespace legit
     struct ImageSamplerData
     {
       bool operator<(const ImageSamplerData &other) const
+      {
+        return std::tie(name, shaderBindingIndex) < std::tie(other.name, other.shaderBindingIndex);
+      }
+
+      std::string name;
+      uint32_t shaderBindingIndex;
+      vk::ShaderStageFlags stageFlags;
+    };
+    struct TextureData
+    {
+      bool operator<(const TextureData &other) const
+      {
+        return std::tie(name, shaderBindingIndex) < std::tie(other.name, other.shaderBindingIndex);
+      }
+
+      std::string name;
+      uint32_t shaderBindingIndex;
+      vk::ShaderStageFlags stageFlags;
+    };
+    struct SamplerData
+    {
+      bool operator<(const SamplerData &other) const
       {
         return std::tie(name, shaderBindingIndex) < std::tie(other.name, other.shaderBindingIndex);
       }
@@ -323,12 +379,89 @@ namespace legit
         return ImageSamplerId();
       return it->second;
     }
+    
+    size_t GetTexturesCount() const
+    {
+      return textureDatum.size();
+    }
+    void GetTextureIds(TextureId *dstTextureIds, size_t count = -1, size_t offset = 0) const
+    {
+      if (count == -1)
+        count = textureDatum.size();
+      assert(count + offset <= textureDatum.size());
+      for (size_t index = offset; index < offset + count; index++)
+        dstTextureIds[index] = TextureId(index);
+    }
+    TextureData GetTextureInfo(TextureId textureId) const
+    {
+      return textureDatum[textureId.id];
+    }
+    TextureId GetTextureId(std::string textureName) const
+    {
+      auto it = textureNameToIds.find(textureName);
+      if (it == textureNameToIds.end())
+        return TextureId();
+      return it->second;
+    }
+    TextureId GetTextureId(uint32_t shaderBindingIndex) const
+    {
+      auto it = textureBindingToIds.find(shaderBindingIndex);
+      if (it == textureBindingToIds.end())
+        return TextureId();
+      return it->second;
+    }
+    
+    size_t GetSamplersCount() const
+    {
+      return samplerDatum.size();
+    }
+    void GetSamplerIds(SamplerId *dstSamplerIds, size_t count = -1, size_t offset = 0) const
+    {
+      if (count == -1)
+        count = samplerDatum.size();
+      assert(count + offset <= samplerDatum.size());
+      for (size_t index = offset; index < offset + count; index++)
+        dstSamplerIds[index] = SamplerId(index);
+    }
+    SamplerData GetSamplerInfo(SamplerId samplerId) const
+    {
+      return samplerDatum[samplerId.id];
+    }
+    SamplerId GetSamplerId(std::string samplerName) const
+    {
+      auto it = samplerNameToIds.find(samplerName);
+      if (it == samplerNameToIds.end())
+        return SamplerId();
+      return it->second;
+    }
+    SamplerId GetSamplerId(uint32_t shaderBindingIndex) const
+    {
+      auto it = samplerBindingToIds.find(shaderBindingIndex);
+      if (it == samplerBindingToIds.end())
+        return SamplerId();
+      return it->second;
+    }
+    
     ImageSamplerBinding MakeImageSamplerBinding(std::string imageSamplerName, legit::ImageView *_imageView, legit::Sampler *_sampler) const
     {
       auto imageSamplerId = GetImageSamplerId(imageSamplerName);
       assert(imageSamplerId.IsValid());
       auto imageSamplerInfo = GetImageSamplerInfo(imageSamplerId);
       return ImageSamplerBinding(_imageView, _sampler, imageSamplerInfo.shaderBindingIndex);
+    }
+    TextureBinding MakeTextureBinding(std::string textureName, legit::ImageView *_imageView) const
+    {
+      auto textureId = GetTextureId(textureName);
+      assert(textureId.IsValid());
+      auto textureInfo = GetTextureInfo(textureId);
+      return TextureBinding(_imageView, textureInfo.shaderBindingIndex);
+    }
+    SamplerBinding MakeSamplerBinding(std::string samplerName, legit::Sampler *_sampler) const
+    {
+      auto samplerId = GetSamplerId(samplerName);
+      assert(samplerId.IsValid());
+      auto samplerInfo = GetSamplerInfo(samplerId);
+      return SamplerBinding(_sampler, samplerInfo.shaderBindingIndex);
     }
 
     size_t GetStorageImagesCount() const
@@ -376,12 +509,14 @@ namespace legit
 
     bool IsEmpty() const
     {
-      return GetImageSamplersCount() == 0 && GetUniformBuffersCount() == 0 && GetStorageImagesCount() == 0 && GetStorageBuffersCount() == 0;
+      return GetImageSamplersCount() == 0 && GetTexturesCount() == 0 && GetSamplersCount() == 0 && GetUniformBuffersCount() == 0 && GetStorageImagesCount() == 0 && GetStorageBuffersCount() == 0;
     }
 
     bool operator<(const DescriptorSetLayoutKey &other) const
     {
-      return std::tie(uniformDatum, uniformBufferDatum, imageSamplerDatum, storageBufferDatum, storageImageDatum) < std::tie(other.uniformDatum, other.uniformBufferDatum, other.imageSamplerDatum, other.storageBufferDatum, other.storageImageDatum);
+      return 
+        std::tie(uniformDatum, uniformBufferDatum, imageSamplerDatum, textureDatum, samplerDatum, storageBufferDatum, storageImageDatum) < 
+        std::tie(other.uniformDatum, other.uniformBufferDatum, other.imageSamplerDatum, other.textureDatum, other.samplerDatum, other.storageBufferDatum, other.storageImageDatum);
     }
 
     static DescriptorSetLayoutKey Merge(DescriptorSetLayoutKey *setLayouts, size_t setsCount)
@@ -395,6 +530,8 @@ namespace legit
 
       std::set<uint32_t> uniformBufferBindings;
       std::set<uint32_t> imageSamplerBindings;
+      std::set<uint32_t> textureBindings;
+      std::set<uint32_t> samplerBindings;
       std::set<uint32_t> storageBufferBindings;
       std::set<uint32_t> storageImageBindings;
 
@@ -408,6 +545,14 @@ namespace legit
         for (auto &imageSamplerData : setLayout.imageSamplerDatum)
         {
           imageSamplerBindings.insert(imageSamplerData.shaderBindingIndex);
+        }
+        for (auto &textureData : setLayout.textureDatum)
+        {
+          textureBindings.insert(textureData.shaderBindingIndex);
+        }
+        for (auto &samplerData : setLayout.samplerDatum)
+        {
+          samplerBindings.insert(samplerData.shaderBindingIndex);
         }
         for (auto &storageBufferData : setLayout.storageBufferDatum)
         {
@@ -469,8 +614,6 @@ namespace legit
         }
       }
 
-     
-
       for (auto &imageSamplerBinding : imageSamplerBindings)
       {
         ImageSamplerId dstImageSamplerId;
@@ -501,6 +644,69 @@ namespace legit
           }
         }
       }
+
+      for (auto &textureBinding : textureBindings)
+      {
+        TextureId dstTextureId;
+        for (size_t setIndex = 0; setIndex < setsCount; setIndex++)
+        {
+          auto &srcLayout = setLayouts[setIndex];
+          auto srcTextureId = srcLayout.GetTextureId(textureBinding);
+          if (!srcTextureId.IsValid()) continue;
+          const auto &srcTexture = srcLayout.textureDatum[srcTextureId.id];
+          assert(srcTexture.shaderBindingIndex == textureBinding);
+
+          if (!dstTextureId.IsValid())
+          {
+            dstTextureId = TextureId(res.textureDatum.size());
+            res.textureDatum.push_back(TextureData());
+            auto &dstTexture = res.textureDatum.back();
+
+            dstTexture.shaderBindingIndex = srcTexture.shaderBindingIndex;
+            dstTexture.name = srcTexture.name;
+            dstTexture.stageFlags = srcTexture.stageFlags;
+          }
+          else
+          {
+            auto &dstTexture = res.textureDatum[dstTextureId.id];
+            dstTexture.stageFlags |= srcTexture.stageFlags;
+            assert(srcTexture.shaderBindingIndex == dstTexture.shaderBindingIndex);
+            assert(srcTexture.name == dstTexture.name);
+          }
+        }
+      }
+      
+      for (auto &samplerBinding : samplerBindings)
+      {
+        SamplerId dstSamplerId;
+        for (size_t setIndex = 0; setIndex < setsCount; setIndex++)
+        {
+          auto &srcLayout = setLayouts[setIndex];
+          auto srcSamplerId = srcLayout.GetSamplerId(samplerBinding);
+          if (!srcSamplerId.IsValid()) continue;
+          const auto &srcSampler = srcLayout.samplerDatum[srcSamplerId.id];
+          assert(srcSampler.shaderBindingIndex == samplerBinding);
+
+          if (!dstSamplerId.IsValid())
+          {
+            dstSamplerId = SamplerId(res.samplerDatum.size());
+            res.samplerDatum.push_back(SamplerData());
+            auto &dstSampler = res.samplerDatum.back();
+
+            dstSampler.shaderBindingIndex = srcSampler.shaderBindingIndex;
+            dstSampler.name = srcSampler.name;
+            dstSampler.stageFlags = srcSampler.stageFlags;
+          }
+          else
+          {
+            auto &dstSampler = res.samplerDatum[dstSamplerId.id];
+            dstSampler.stageFlags |= srcSampler.stageFlags;
+            assert(srcSampler.shaderBindingIndex == dstSampler.shaderBindingIndex);
+            assert(srcSampler.name == dstSampler.name);
+          }
+        }
+      }
+
       for (auto &storageBufferBinding : storageBufferBindings)
       {
         StorageBufferId dstStorageBufferId;
@@ -603,6 +809,26 @@ namespace legit
         imageSamplerNameToIds[imageSamplerData.name] = imageSamplerId;
         imageSamplerBindingToIds[imageSamplerData.shaderBindingIndex] = imageSamplerId;
       }
+      
+      textureNameToIds.clear();
+      textureBindingToIds.clear();
+      for (size_t textureIndex = 0; textureIndex < textureDatum.size(); textureIndex++)
+      {
+        TextureId textureId = TextureId(textureIndex);
+        auto &textureData = textureDatum[textureIndex];
+        textureNameToIds[textureData.name] = textureId;
+        textureBindingToIds[textureData.shaderBindingIndex] = textureId;
+      }
+
+      samplerNameToIds.clear();
+      samplerBindingToIds.clear();
+      for (size_t samplerIndex = 0; samplerIndex < samplerDatum.size(); samplerIndex++)
+      {
+        SamplerId samplerId = SamplerId(samplerIndex);
+        auto &samplerData = samplerDatum[samplerIndex];
+        samplerNameToIds[samplerData.name] = samplerId;
+        samplerBindingToIds[samplerData.shaderBindingIndex] = samplerId;
+      }
 
       storageBufferNameToIds.clear();
       storageBufferBindingToIds.clear();
@@ -633,6 +859,8 @@ namespace legit
     std::vector<UniformData> uniformDatum;
     std::vector<UniformBufferData> uniformBufferDatum;
     std::vector<ImageSamplerData> imageSamplerDatum;
+    std::vector<TextureData> textureDatum;
+    std::vector<SamplerData> samplerDatum;
     std::vector<StorageBufferData> storageBufferDatum;
     std::vector<StorageImageData> storageImageDatum;
 
@@ -641,6 +869,10 @@ namespace legit
     std::map<uint32_t, UniformBufferId> uniformBufferBindingToIds;
     std::map<std::string, ImageSamplerId> imageSamplerNameToIds;
     std::map<uint32_t, ImageSamplerId> imageSamplerBindingToIds;
+    std::map<std::string, TextureId> textureNameToIds;
+    std::map<uint32_t, TextureId> textureBindingToIds;
+    std::map<std::string, SamplerId> samplerNameToIds;
+    std::map<uint32_t, SamplerId> samplerBindingToIds;
     std::map<std::string, StorageBufferId> storageBufferNameToIds;
     std::map<uint32_t, StorageBufferId> storageBufferBindingToIds;
     std::map<std::string, StorageImageId> storageImageNameToIds;
@@ -652,13 +884,6 @@ namespace legit
     Shader(vk::Device logicalDevice, std::string shaderFile)
     {
       auto bytecode = GetBytecode(shaderFile);
-      /*vk::ShaderStageFlagBits shaderStage;
-      if (shaderFile.find(".vert.spv") != std::string::npos)
-        shaderStage = vk::ShaderStageFlagBits::eVertex;
-      if (shaderFile.find(".frag.spv") != std::string::npos)
-        shaderStage = vk::ShaderStageFlagBits::eFragment;
-      if (shaderFile.find(".comp.spv") != std::string::npos)
-        shaderStage = vk::ShaderStageFlagBits::eCompute;*/
       Init(logicalDevice, bytecode);
     }
     Shader(vk::Device logicalDevice, const std::vector<uint32_t> &bytecode)
@@ -700,6 +925,17 @@ namespace legit
       return localSize;
     }
   private:
+    //https://github.com/KhronosGroup/SPIRV-Cross/issues/753
+    static std::string MaybeTrimDxcCbufferName(std::string cbufferName)
+    {
+      auto pos = cbufferName.find("type.");
+      if(pos == std::string::npos)
+        return cbufferName;
+      else
+      {
+        return cbufferName.substr(pos + std::string("type.").length());
+      }
+    }
     void Init(vk::Device logicalDevice, const std::vector<uint32_t> &bytecode)
     {
       shaderModule.reset(new ShaderModule(logicalDevice, bytecode));
@@ -736,6 +972,8 @@ namespace legit
       {
         std::vector<spirv_cross::Resource> uniformBuffers;
         std::vector<spirv_cross::Resource> imageSamplers;
+        std::vector<spirv_cross::Resource> textures;
+        std::vector<spirv_cross::Resource> samplers;
         std::vector<spirv_cross::Resource> storageBuffers;
         std::vector<spirv_cross::Resource> storageImages;
       };
@@ -754,6 +992,22 @@ namespace legit
         if (setShaderId >= setResources.size())
           setResources.resize(setShaderId + 1);
         setResources[setShaderId].imageSamplers.push_back(imageSampler);
+      }
+      
+      for (const auto &texture : resources.separate_images)
+      {
+        uint32_t setShaderId = compiler.get_decoration(texture.id, spv::DecorationDescriptorSet);
+        if (setShaderId >= setResources.size())
+          setResources.resize(setShaderId + 1);
+        setResources[setShaderId].textures.push_back(texture);
+      }
+
+      for (const auto &sampler : resources.separate_samplers)
+      {
+        uint32_t setShaderId = compiler.get_decoration(sampler.id, spv::DecorationDescriptorSet);
+        if (setShaderId >= setResources.size())
+          setResources.resize(setShaderId + 1);
+        setResources[setShaderId].samplers.push_back(sampler);
       }
       
       for (const auto &buffer : resources.storage_buffers)
@@ -792,7 +1046,7 @@ namespace legit
             auto &bufferData = descriptorSetLayoutKey.uniformBufferDatum.back();
 
             bufferData.shaderBindingIndex = shaderBindingIndex;
-            bufferData.name = buffer.name;
+            bufferData.name = MaybeTrimDxcCbufferName(buffer.name);
             bufferData.stageFlags = stageFlags;
 
             uint32_t declaredSize = uint32_t(compiler.get_declared_struct_size(bufferType));
@@ -837,6 +1091,30 @@ namespace legit
           imageSamplerData.shaderBindingIndex = shaderBindingIndex;
           imageSamplerData.stageFlags = stageFlags;
           imageSamplerData.name = imageSampler.name;
+        }
+        
+        for (auto texture : setResources[setIndex].textures)
+        {
+          auto textureId = DescriptorSetLayoutKey::TextureId(descriptorSetLayoutKey.textureDatum.size());
+
+          uint32_t shaderBindingIndex = compiler.get_decoration(texture.id, spv::DecorationBinding);
+          descriptorSetLayoutKey.textureDatum.push_back(DescriptorSetLayoutKey::TextureData());
+          auto &textureData = descriptorSetLayoutKey.textureDatum.back();
+          textureData.shaderBindingIndex = shaderBindingIndex;
+          textureData.stageFlags = stageFlags;
+          textureData.name = texture.name;
+        }
+        
+        for (auto sampler : setResources[setIndex].samplers)
+        {
+          auto samplerId = DescriptorSetLayoutKey::SamplerId(descriptorSetLayoutKey.samplerDatum.size());
+
+          uint32_t shaderBindingIndex = compiler.get_decoration(sampler.id, spv::DecorationBinding);
+          descriptorSetLayoutKey.samplerDatum.push_back(DescriptorSetLayoutKey::SamplerData());
+          auto &samplerData = descriptorSetLayoutKey.samplerDatum.back();
+          samplerData.shaderBindingIndex = shaderBindingIndex;
+          samplerData.stageFlags = stageFlags;
+          samplerData.name = sampler.name;
         }
 
         for (auto buffer : setResources[setIndex].storageBuffers)

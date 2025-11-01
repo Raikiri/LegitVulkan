@@ -603,6 +603,16 @@ namespace legit
           imageSamplerBindings.push_back(shaderDataSetInfo->MakeImageSamplerBinding(name, imageView, sampler));
           return *this;
         }
+        DescriptorSetBindings &AddTextureBinding(std::string name, legit::ImageView *imageView)
+        {
+          textureBindings.push_back(shaderDataSetInfo->MakeTextureBinding(name, imageView));
+          return *this;
+        }
+        DescriptorSetBindings &AddSamplerBinding(std::string name, legit::Sampler *sampler)
+        {
+          samplerBindings.push_back(shaderDataSetInfo->MakeSamplerBinding(name, sampler));
+          return *this;
+        }
         DescriptorSetBindings &AddStorageImageBinding(std::string name, legit::ImageView *imageView)
         {
           storageImageBindings.push_back(shaderDataSetInfo->MakeStorageImageBinding(name, imageView));
@@ -632,6 +642,8 @@ namespace legit
           return *this;
         }
         std::vector<legit::ImageSamplerBinding> imageSamplerBindings;
+        std::vector<legit::TextureBinding> textureBindings;
+        std::vector<legit::SamplerBinding> samplerBindings;
         std::vector<legit::StorageImageBinding> storageImageBindings;
         std::vector<legit::StorageBufferBinding> storageBufferBindings;
         std::vector<UniformBinding> uniformBindings;
@@ -1041,328 +1053,6 @@ namespace legit
         commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), {}, vkBufferMemoryBarriers, vkImageMemoryBarriers);
     }
 
-    void ExecuteOld(vk::CommandBuffer commandBuffer, legit::CpuProfiler *cpuProfiler, legit::GpuProfiler *gpuProfiler)
-    {
-      ResolveImages();
-      ResolveImageViews();
-      ResolveBuffers();
-
-
-
-      for (size_t taskIndex = 0; taskIndex < tasks.size(); taskIndex++)
-      {
-        auto &task = tasks[taskIndex];
-        switch (task.type)
-        {
-          case Task::Types::RenderPass:
-          {
-            auto &renderPassDesc = renderPassDescs[task.index];
-            auto profilerTask = CreateProfilerTask(renderPassDesc);
-            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
-            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
-
-            RenderPassContext passContext;
-            passContext.resolvedImageViews.resize(imageViewProxies.GetSize(), nullptr);
-            passContext.resolvedBuffers.resize(bufferProxies.GetSize(), nullptr);
-
-            for (auto &inputImageViewProxy : renderPassDesc.inputImageViewProxies)
-            {
-              passContext.resolvedImageViews[inputImageViewProxy.asInt] = GetResolvedImageView(taskIndex, inputImageViewProxy);
-            }
-
-            for (auto &inoutStorageImageProxy : renderPassDesc.inoutStorageImageProxies)
-            {
-              passContext.resolvedImageViews[inoutStorageImageProxy.asInt] = GetResolvedImageView(taskIndex, inoutStorageImageProxy);
-            }
-
-            for (auto &inoutBufferProxy : renderPassDesc.inoutStorageBufferProxies)
-            {
-              passContext.resolvedBuffers[inoutBufferProxy.asInt] = GetResolvedBuffer(taskIndex, inoutBufferProxy);
-            }
-
-            for (auto& vertexBufferProxy : renderPassDesc.vertexBufferProxies)
-            {
-              passContext.resolvedBuffers[vertexBufferProxy.asInt] = GetResolvedBuffer(taskIndex, vertexBufferProxy);
-
-            }
-            vk::PipelineStageFlags srcStage;
-            vk::PipelineStageFlags dstStage;
-            std::vector<vk::ImageMemoryBarrier> imageBarriers;
-
-            for (auto inputImageViewProxy : renderPassDesc.inputImageViewProxies)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, inputImageViewProxy);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::GraphicsShaderRead, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            for (auto &inoutStorageImageProxy : renderPassDesc.inoutStorageImageProxies)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, inoutStorageImageProxy);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::GraphicsShaderReadWrite, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            for (auto colorAttachment : renderPassDesc.colorAttachments)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, colorAttachment.imageViewProxyId);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::ColorAttachment, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            if(!(renderPassDesc.depthAttachment.imageViewProxyId == ImageViewProxyId()))
-            {
-              auto imageView = GetResolvedImageView(taskIndex, renderPassDesc.depthAttachment.imageViewProxyId);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::DepthAttachment, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-
-            for (auto vertexBufferProxy : renderPassDesc.vertexBufferProxies)
-            {
-              auto storageBuffer = GetResolvedBuffer(taskIndex, vertexBufferProxy);
-              AddBufferBarriers(storageBuffer, BufferUsageTypes::VertexBuffer, taskIndex, srcStage, dstStage, bufferBarriers);
-            }
-
-            for (auto inoutBufferProxy : renderPassDesc.inoutStorageBufferProxies)
-            {
-              auto storageBuffer = GetResolvedBuffer(taskIndex, inoutBufferProxy);
-              AddBufferBarriers(storageBuffer, BufferUsageTypes::GraphicsShaderReadWrite, taskIndex, srcStage, dstStage, bufferBarriers);
-            }
-
-            if (imageBarriers.size() > 0 || bufferBarriers.size() > 0)
-              commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), {}, bufferBarriers, imageBarriers);
-
-            
-            std::vector<FramebufferCache::Attachment> colorAttachments;
-            FramebufferCache::Attachment depthAttachment;
-
-            legit::RenderPassCache::RenderPassKey renderPassKey;
-
-            for (auto &attachment : renderPassDesc.colorAttachments)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, attachment.imageViewProxyId);
-
-              renderPassKey.colorAttachmentDescs.push_back({imageView->GetImageData()->GetFormat(), attachment.loadOp, attachment.clearValue });
-              colorAttachments.push_back({ imageView, attachment.clearValue });
-            }
-            bool depthPresent = !(renderPassDesc.depthAttachment.imageViewProxyId == ImageViewProxyId());
-            if (depthPresent)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, renderPassDesc.depthAttachment.imageViewProxyId);
-
-              renderPassKey.depthAttachmentDesc = { imageView->GetImageData()->GetFormat(), renderPassDesc.depthAttachment.loadOp, renderPassDesc.depthAttachment.clearValue };
-              depthAttachment = { imageView, renderPassDesc.depthAttachment.clearValue };
-            }
-            else
-            {
-              renderPassKey.depthAttachmentDesc.format = vk::Format::eUndefined;
-            }
-
-            auto renderPass = renderPassCache.GetRenderPass(renderPassKey);
-            passContext.renderPass = renderPass;
-
-            framebufferCache.BeginPass(commandBuffer, colorAttachments, depthPresent ? (&depthAttachment) : nullptr, renderPass, renderPassDesc.renderAreaExtent);
-            passContext.commandBuffer = commandBuffer;
-            renderPassDesc.recordFunc(passContext);
-            framebufferCache.EndPass(commandBuffer);
-          }break;
-          case Task::Types::RenderPass2:
-          {
-            assert(!!"Old implementation");
-          }break;
-          case Task::Types::ComputePass:
-          {
-            auto &computePassDesc = computePassDescs[task.index];
-            auto profilerTask = CreateProfilerTask(computePassDesc);
-            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
-            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
-
-            PassContext passContext;
-            passContext.resolvedImageViews.resize(imageViewProxies.GetSize(), nullptr);
-            passContext.resolvedBuffers.resize(bufferProxies.GetSize(), nullptr);
-
-            for (auto &inputImageViewProxy : computePassDesc.inputImageViewProxies)
-            {
-              passContext.resolvedImageViews[inputImageViewProxy.asInt] = GetResolvedImageView(taskIndex, inputImageViewProxy);
-            }
-
-            for (auto &inoutBufferProxy : computePassDesc.inoutStorageBufferProxies)
-            {
-              passContext.resolvedBuffers[inoutBufferProxy.asInt] = GetResolvedBuffer(taskIndex, inoutBufferProxy);
-            }
-
-            for (auto &inoutStorageImageProxy : computePassDesc.inoutStorageImageProxies)
-            {
-              passContext.resolvedImageViews[inoutStorageImageProxy.asInt] = GetResolvedImageView(taskIndex, inoutStorageImageProxy);
-            }
-
-            vk::PipelineStageFlags srcStage;
-            vk::PipelineStageFlags dstStage;
-
-            std::vector<vk::ImageMemoryBarrier> imageBarriers;
-            for (auto inputImageViewProxy : computePassDesc.inputImageViewProxies)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, inputImageViewProxy);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::ComputeShaderRead, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            for (auto &inoutStorageImageProxy : computePassDesc.inoutStorageImageProxies)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, inoutStorageImageProxy);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::ComputeShaderReadWrite, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-            for (auto inoutBufferProxy : computePassDesc.inoutStorageBufferProxies)
-            {
-              auto storageBuffer = GetResolvedBuffer(taskIndex, inoutBufferProxy);
-              AddBufferBarriers(storageBuffer, BufferUsageTypes::ComputeShaderReadWrite, taskIndex, srcStage, dstStage, bufferBarriers);
-            }
-
-            if (imageBarriers.size() > 0 || bufferBarriers.size() > 0)
-              commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), {}, bufferBarriers, imageBarriers);
-
-            passContext.commandBuffer = commandBuffer;
-            if(computePassDesc.recordFunc)
-              computePassDesc.recordFunc(passContext);
-          }break;
-          case Task::Types::ComputePass2:
-          {
-            assert(!!"Not implemented");
-          }break;          
-          case Task::Types::TransferPass:
-          {
-            auto& transferPassDesc = transferPassDescs[task.index];
-            auto profilerTask = CreateProfilerTask(transferPassDesc);
-            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
-            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
-
-            PassContext passContext;
-            passContext.resolvedImageViews.resize(imageViewProxies.GetSize(), nullptr);
-            passContext.resolvedBuffers.resize(bufferProxies.GetSize(), nullptr);
-
-            for (auto& srcImageViewProxy : transferPassDesc.srcImageViewProxies)
-            {
-              passContext.resolvedImageViews[srcImageViewProxy.asInt] = GetResolvedImageView(taskIndex, srcImageViewProxy);
-            }
-            for (auto& dstImageViewProxy : transferPassDesc.dstImageViewProxies)
-            {
-              passContext.resolvedImageViews[dstImageViewProxy.asInt] = GetResolvedImageView(taskIndex, dstImageViewProxy);
-            }
-
-            for (auto& srcBufferProxy : transferPassDesc.srcBufferProxies)
-            {
-              passContext.resolvedBuffers[srcBufferProxy.asInt] = GetResolvedBuffer(taskIndex, srcBufferProxy);
-            }
-
-            for (auto& dstBufferProxy : transferPassDesc.dstBufferProxies)
-            {
-              passContext.resolvedBuffers[dstBufferProxy.asInt] = GetResolvedBuffer(taskIndex, dstBufferProxy);
-            }
-
-            vk::PipelineStageFlags srcStage;
-            vk::PipelineStageFlags dstStage;
-
-            std::vector<vk::ImageMemoryBarrier> imageBarriers;
-            for (auto srcImageViewProxy : transferPassDesc.srcImageViewProxies)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, srcImageViewProxy);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::TransferSrc, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            for (auto dstImageViewProxy : transferPassDesc.dstImageViewProxies)
-            {
-              auto imageView = GetResolvedImageView(taskIndex, dstImageViewProxy);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::TransferDst, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-            for (auto srcBufferProxy : transferPassDesc.srcBufferProxies)
-            {
-              auto storageBuffer = GetResolvedBuffer(taskIndex, srcBufferProxy);
-              AddBufferBarriers(storageBuffer, BufferUsageTypes::TransferSrc, taskIndex, srcStage, dstStage, bufferBarriers);
-            }
-
-            for (auto dstBufferProxy : transferPassDesc.dstBufferProxies)
-            {
-              auto storageBuffer = GetResolvedBuffer(taskIndex, dstBufferProxy);
-              AddBufferBarriers(storageBuffer, BufferUsageTypes::TransferDst, taskIndex, srcStage, dstStage, bufferBarriers);
-            }
-
-            if (imageBarriers.size() > 0 || bufferBarriers.size() > 0)
-              commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), {}, bufferBarriers, imageBarriers);
-
-            passContext.commandBuffer = commandBuffer;
-            if (transferPassDesc.recordFunc)
-              transferPassDesc.recordFunc(passContext);
-          }break;
-          case Task::Types::ImagePresent:
-          {
-            auto imagePesentDesc = imagePresentDescs[task.index];
-            auto profilerTask = CreateProfilerTask(imagePesentDesc);
-            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
-            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
-
-            vk::PipelineStageFlags srcStage;
-            vk::PipelineStageFlags dstStage;
-            std::vector<vk::ImageMemoryBarrier> imageBarriers;
-            {
-              auto imageView = GetResolvedImageView(taskIndex, imagePesentDesc.presentImageViewProxyId);
-              AddImageTransitionBarriers(imageView, ImageUsageTypes::Present, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            if (imageBarriers.size() > 0)
-              commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), {}, {}, imageBarriers);
-          }break;
-          case Task::Types::FrameSyncBegin:
-          {
-            auto frameSyncDesc = frameSyncBeginDescs[task.index];
-            auto profilerTask = CreateProfilerTask(frameSyncDesc);
-            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
-            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
-
-            std::vector<vk::ImageMemoryBarrier> imageBarriers;
-            vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eBottomOfPipe;
-            vk::PipelineStageFlags dstStage = vk::PipelineStageFlagBits::eTopOfPipe;
-
-            auto memoryBarrier = vk::MemoryBarrier();
-            commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), { memoryBarrier }, {}, {});
-          }break;
-          case Task::Types::FrameSyncEnd:
-          {
-            auto frameSyncDesc = frameSyncEndDescs[task.index];
-            auto profilerTask = CreateProfilerTask(frameSyncDesc);
-            auto gpuTask = gpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color, vk::PipelineStageFlagBits::eBottomOfPipe);
-            auto cpuTask = cpuProfiler->StartScopedTask(profilerTask.name, profilerTask.color);
-
-            std::vector<vk::ImageMemoryBarrier> imageBarriers;
-            vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eBottomOfPipe;
-            vk::PipelineStageFlags dstStage = vk::PipelineStageFlagBits::eTopOfPipe;
-            for (auto imageViewProxy : imageViewProxies)
-            {
-              if(imageViewProxy.externalView != nullptr && imageViewProxy.externalUsageType != legit::ImageUsageTypes::Unknown && imageViewProxy.externalUsageType != legit::ImageUsageTypes::None)
-                AddImageTransitionBarriers(imageViewProxy.externalView, imageViewProxy.externalUsageType, taskIndex, srcStage, dstStage, imageBarriers);
-            }
-
-            /*std::vector<vk::BufferMemoryBarrier> bufferBarriers;
-            for (auto bufferProxy : bufferProxies)
-            {
-              if(bufferProxy.externalBuffer != nullptr)
-              auto storageBuffer = GetResolvedBuffer(taskIndex, inoutBufferProxy);
-              AddBufferBarriers(storageBuffer, BufferUsageTypes::ComputeShaderReadWrite, taskIndex, srcStage, dstStage, bufferBarriers);
-            }*/
-
-            if(imageBarriers.size() > 0)
-              commandBuffer.pipelineBarrier(srcStage, dstStage, vk::DependencyFlags(), {}, {}, imageBarriers);
-          }break;
-        }
-      }
-
-      renderPassDescs.clear();
-      transferPassDescs.clear();
-      imagePresentDescs.clear();
-      frameSyncBeginDescs.clear();
-      frameSyncEndDescs.clear();
-      tasks.clear();
-    }
     void Execute(vk::Device logicalDevice, vk::CommandPool transientCommandPool, legit::DescriptorSetCache *descriptorSetCache, legit::ShaderMemoryPool *memoryPool, vk::CommandBuffer commandBuffer, legit::CpuProfiler *cpuProfiler, legit::GpuProfiler *gpuProfiler)
     {
       ResolveImages();
@@ -1509,10 +1199,17 @@ namespace legit
               auto descriptoSetBindings = legit::DescriptorSetBindings()
                 .SetUniformBufferBindings(uniforms.uniformBufferBindings)
                 .SetImageSamplerBindings(bindings.imageSamplerBindings)
+                .SetTextureBindings(bindings.textureBindings)
+                .SetSamplerBindings(bindings.samplerBindings)
                 .SetStorageImageBindings(bindings.storageImageBindings)
                 .SetStorageBufferBindings(bindings.storageBufferBindings);
 
               for (auto binding : bindings.imageSamplerBindings)
+              {
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderRead));
+              }
+
+              for (auto binding : bindings.textureBindings)
               {
                 AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderRead));
               }
@@ -1699,10 +1396,17 @@ namespace legit
               auto descriptoSetBindings = legit::DescriptorSetBindings()
                 .SetUniformBufferBindings(uniforms.uniformBufferBindings)
                 .SetImageSamplerBindings(bindings.imageSamplerBindings)
+                .SetTextureBindings(bindings.textureBindings)
+                .SetSamplerBindings(bindings.samplerBindings)
                 .SetStorageImageBindings(bindings.storageImageBindings)
                 .SetStorageBufferBindings(bindings.storageBufferBindings);
 
               for (auto binding : bindings.imageSamplerBindings)
+              {
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderRead));
+              }
+
+              for (auto binding : bindings.textureBindings)
               {
                 AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderRead));
               }

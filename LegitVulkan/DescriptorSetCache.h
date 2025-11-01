@@ -4,6 +4,8 @@ namespace legit
   {
     std::vector<UniformBufferBinding> uniformBufferBindings;
     std::vector<ImageSamplerBinding> imageSamplerBindings;
+    std::vector<TextureBinding> textureBindings;
+    std::vector<SamplerBinding> samplerBindings;
     std::vector<StorageBufferBinding> storageBufferBindings;
     std::vector<StorageImageBinding> storageImageBindings;
 
@@ -15,6 +17,16 @@ namespace legit
     DescriptorSetBindings &SetImageSamplerBindings(std::vector<ImageSamplerBinding> imageSamplerBindings)
     {
       this->imageSamplerBindings = imageSamplerBindings;
+      return *this;
+    }
+    DescriptorSetBindings &SetTextureBindings(std::vector<TextureBinding> textureBindings)
+    {
+      this->textureBindings = textureBindings;
+      return *this;
+    }
+    DescriptorSetBindings &SetSamplerBindings(std::vector<SamplerBinding> samplerBindings)
+    {
+      this->samplerBindings = samplerBindings;
       return *this;
     }
     DescriptorSetBindings &SetStorageBufferBindings(std::vector<StorageBufferBinding> storageBufferBindings)
@@ -44,6 +56,16 @@ namespace legit
         .setDescriptorCount(1000)
         .setType(vk::DescriptorType::eCombinedImageSampler);
       poolSizes.push_back(imageSamplerPoolSize);
+
+      auto texturePoolSize = vk::DescriptorPoolSize()
+        .setDescriptorCount(1000)
+        .setType(vk::DescriptorType::eSampledImage);
+      poolSizes.push_back(texturePoolSize);
+
+      auto samplerSize = vk::DescriptorPoolSize()
+        .setDescriptorCount(1000)
+        .setType(vk::DescriptorType::eSampler);
+      poolSizes.push_back(samplerSize);
 
       auto storagePoolSize = vk::DescriptorPoolSize()
         .setDescriptorCount(1000)
@@ -115,6 +137,39 @@ namespace legit
             .setStageFlags(imageSamplerInfo.stageFlags);
           layoutBindings.push_back(imageSamplerLayoutBinding);
         }
+        
+        std::vector<legit::DescriptorSetLayoutKey::TextureId> textureIds;
+        textureIds.resize(descriptorSetLayoutKey.GetTexturesCount());
+        descriptorSetLayoutKey.GetTextureIds(textureIds.data());
+
+        for (auto textureId : textureIds)
+        {
+          auto textureInfo = descriptorSetLayoutKey.GetTextureInfo(textureId);
+
+          auto textureLayoutBinding = vk::DescriptorSetLayoutBinding()
+            .setBinding(textureInfo.shaderBindingIndex)
+            .setDescriptorCount(1) //if this is an array of image samplers
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setStageFlags(textureInfo.stageFlags);
+          layoutBindings.push_back(textureLayoutBinding);
+        }
+        
+        std::vector<legit::DescriptorSetLayoutKey::SamplerId> samplerIds;
+        samplerIds.resize(descriptorSetLayoutKey.GetSamplersCount());
+        descriptorSetLayoutKey.GetSamplerIds(samplerIds.data());
+
+        for (auto samplerId : samplerIds)
+        {
+          auto samplerInfo = descriptorSetLayoutKey.GetSamplerInfo(samplerId);
+
+          auto samplerLayoutBinding = vk::DescriptorSetLayoutBinding()
+            .setBinding(samplerInfo.shaderBindingIndex)
+            .setDescriptorCount(1) //if this is an array of image samplers
+            .setDescriptorType(vk::DescriptorType::eSampler)
+            .setStageFlags(samplerInfo.stageFlags);
+          layoutBindings.push_back(samplerLayoutBinding);
+        }
+
 
         std::vector<legit::DescriptorSetLayoutKey::StorageImageId> storageImageIds;
         storageImageIds.resize(descriptorSetLayoutKey.GetStorageImagesCount());
@@ -226,6 +281,60 @@ namespace legit
           setWrites.push_back(setWrite);
         }
 
+        assert(setBindings.textureBindings.size() == setLayoutKey.GetTexturesCount());
+        std::vector<vk::DescriptorImageInfo> textureInfos(setBindings.textureBindings.size());
+        for (size_t textureIndex = 0; textureIndex < setBindings.textureBindings.size(); textureIndex++)
+        {
+          auto &textureBinding = setBindings.textureBindings[textureIndex];
+
+          {
+            auto textureId = setLayoutKey.GetTextureId(textureBinding.shaderBindingId);
+            assert(textureId.IsValid());
+            auto textureData = setLayoutKey.GetTextureInfo(textureId);
+          }
+
+          textureInfos[textureIndex] = vk::DescriptorImageInfo()
+            .setImageView(textureBinding.imageView->GetHandle())
+            .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+
+          //auto imageInfo 
+          auto setWrite = vk::WriteDescriptorSet()
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eSampledImage)
+            .setDstBinding(textureBinding.shaderBindingId)
+            .setDstSet(descriptorSet.get())
+            .setPImageInfo(&textureInfos[textureIndex]);
+
+          setWrites.push_back(setWrite);
+        }
+        
+        assert(setBindings.samplerBindings.size() == setLayoutKey.GetSamplersCount());
+        std::vector<vk::DescriptorImageInfo> samplerInfos(setBindings.samplerBindings.size());
+        for (size_t samplerIndex = 0; samplerIndex < setBindings.samplerBindings.size(); samplerIndex++)
+        {
+          auto &samplerBinding = setBindings.samplerBindings[samplerIndex];
+
+          {
+            auto samplerId = setLayoutKey.GetSamplerId(samplerBinding.shaderBindingId);
+            assert(samplerId.IsValid());
+            auto samplerData = setLayoutKey.GetSamplerInfo(samplerId);
+          }
+
+          samplerInfos[samplerIndex] = vk::DescriptorImageInfo()
+            .setSampler(samplerBinding.sampler->GetHandle())
+            .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+
+          //auto imageInfo 
+          auto setWrite = vk::WriteDescriptorSet()
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eSampler)
+            .setDstBinding(samplerBinding.shaderBindingId)
+            .setDstSet(descriptorSet.get())
+            .setPImageInfo(&samplerInfos[samplerIndex]);
+
+          setWrites.push_back(setWrite);
+        }        
+        
         assert(setBindings.storageBufferBindings.size() == setLayoutKey.GetStorageBuffersCount());
 
         std::vector<vk::DescriptorBufferInfo> storageBufferInfos(setBindings.storageBufferBindings.size());
