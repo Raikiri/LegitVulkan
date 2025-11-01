@@ -925,17 +925,6 @@ namespace legit
       return localSize;
     }
   private:
-    //https://github.com/KhronosGroup/SPIRV-Cross/issues/753
-    static std::string MaybeTrimDxcCbufferName(std::string cbufferName)
-    {
-      auto pos = cbufferName.find("type.");
-      if(pos == std::string::npos)
-        return cbufferName;
-      else
-      {
-        return cbufferName.substr(pos + std::string("type.").length());
-      }
-    }
     void Init(vk::Device logicalDevice, const std::vector<uint32_t> &bytecode)
     {
       shaderModule.reset(new ShaderModule(logicalDevice, bytecode));
@@ -1046,7 +1035,14 @@ namespace legit
             auto &bufferData = descriptorSetLayoutKey.uniformBufferDatum.back();
 
             bufferData.shaderBindingIndex = shaderBindingIndex;
-            bufferData.name = MaybeTrimDxcCbufferName(buffer.name);
+            //https://github.com/KhronosGroup/SPIRV-Cross/issues/753            
+            if(buffer.name.find("ConstantBuffer.") != std::string::npos)
+            {
+              bufferData.name = compiler.get_name(buffer.id);
+            }else
+            {
+              bufferData.name = buffer.name;
+            }
             bufferData.stageFlags = stageFlags;
 
             uint32_t declaredSize = uint32_t(compiler.get_declared_struct_size(bufferType));
@@ -1126,6 +1122,7 @@ namespace legit
           if (bufferType.basetype == spirv_cross::SPIRType::BaseType::Struct)
           {
             auto storageBufferId = DescriptorSetLayoutKey::StorageBufferId(descriptorSetLayoutKey.storageBufferDatum.size());
+            if(buffer.name.find("counter.var.") != std::string::npos) continue;
             descriptorSetLayoutKey.storageBufferDatum.emplace_back(DescriptorSetLayoutKey::StorageBufferData());
             auto &bufferData = descriptorSetLayoutKey.storageBufferDatum.back();
 
