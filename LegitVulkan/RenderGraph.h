@@ -1188,11 +1188,20 @@ namespace legit
 
             RenderPassContext2 passContext([&](const PassContext2::DescriptorSetBindings &bindings)
             {
+              std::vector<legit::DescriptorSetLayoutKey::UniformBufferId> uniformBufferIds;
+              uniformBufferIds.resize(bindings.shaderDataSetInfo->GetUniformBuffersCount());
+              bindings.shaderDataSetInfo->GetUniformBufferIds(uniformBufferIds.data());
+              assert(uniformBufferIds.size() == bindings.uniformBindings.size());
+              
               auto uniforms = memoryPool->BeginSet(bindings.shaderDataSetInfo);
+              size_t bufIndex = 0;
               for(auto uniformBinding : bindings.uniformBindings)
               {
+                auto uniformBufferInfo = bindings.shaderDataSetInfo->GetUniformBufferInfo(uniformBufferIds[bufIndex]);
+                assert(uniformBinding.size == uniformBufferInfo.size);
                 void *uniformData = memoryPool->GetUniformBufferData(uniformBinding.name, uniformBinding.size);
                 memcpy(uniformData, uniformBinding.data, uniformBinding.size);
+                bufIndex++;
               }
               memoryPool->EndSet();
 
