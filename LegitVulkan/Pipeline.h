@@ -10,6 +10,13 @@ namespace legit
       settings.writeEnable = true;
       return settings;
     }
+    static DepthSettings DepthTestReadonly()
+    {
+      DepthSettings settings;
+      settings.depthFunc = vk::CompareOp::eLess;
+      settings.writeEnable = false;
+      return settings;
+    }
     static DepthSettings Disabled()
     {
       DepthSettings settings;
@@ -51,7 +58,9 @@ namespace legit
         .setColorBlendOp(vk::BlendOp::eAdd)
         .setColorWriteMask(vk::ColorComponentFlagBits::eA | vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB)
         .setSrcColorBlendFactor(vk::BlendFactor::eOne)
-        .setDstColorBlendFactor(vk::BlendFactor::eOne);
+        .setDstColorBlendFactor(vk::BlendFactor::eOne)
+        .setSrcAlphaBlendFactor(vk::BlendFactor::eOne)
+        .setDstAlphaBlendFactor(vk::BlendFactor::eOne);
       return blendSettings;
     }
     static BlendSettings Mixed()
