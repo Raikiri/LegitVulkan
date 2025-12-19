@@ -249,6 +249,7 @@ namespace legit
     ComputeShaderReadWrite,
     TransferDst,
     TransferSrc,
+    DrawIndirect,
     None,
     Unknown
   };
@@ -287,6 +288,12 @@ namespace legit
         accessPattern.stage = vk::PipelineStageFlagBits::eTransfer;
         accessPattern.accessMask = vk::AccessFlags();
         accessPattern.queueFamilyType = QueueFamilyTypes::Transfer;
+      }break;
+      case BufferUsageTypes::DrawIndirect:
+      {
+        accessPattern.stage = vk::PipelineStageFlagBits::eDrawIndirect;
+        accessPattern.accessMask = vk::AccessFlagBits::eIndirectCommandRead;
+        accessPattern.queueFamilyType = QueueFamilyTypes::Graphics;
       }break;
       case BufferUsageTypes::None:
       {
@@ -338,6 +345,12 @@ namespace legit
         accessPattern.stage = vk::PipelineStageFlagBits::eTransfer;
         accessPattern.accessMask = vk::AccessFlagBits::eTransferRead;
         accessPattern.queueFamilyType = QueueFamilyTypes::Transfer;
+      }break;
+      case BufferUsageTypes::DrawIndirect:
+      {
+        accessPattern.stage = vk::PipelineStageFlagBits::eDrawIndirect;
+        accessPattern.accessMask = vk::AccessFlagBits::eIndirectCommandRead;
+        accessPattern.queueFamilyType = QueueFamilyTypes::Graphics;
       }break;
       case BufferUsageTypes::None:
       {

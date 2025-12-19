@@ -118,6 +118,7 @@ namespace legit
       const legit::VertexDeclaration &vertexDecl,
       vk::PipelineLayout pipelineLayout,
       DepthSettings depthSettings,
+      vk::CullModeFlags cullMode,
       const std::vector<BlendSettings> &attachmentBlendSettings,
       vk::PrimitiveTopology primitiveTopology,
       vk::RenderPass renderPass)
@@ -149,8 +150,8 @@ namespace legit
         .setDepthClampEnable(false)
         .setPolygonMode(vk::PolygonMode::eFill)
         .setLineWidth(1.0f)
-        .setCullMode(vk::CullModeFlagBits::eNone)
-        .setFrontFace(vk::FrontFace::eClockwise)
+        .setCullMode(cullMode)
+        .setFrontFace(vk::FrontFace::eCounterClockwise)
         .setDepthBiasEnable(false);
 
       auto multisampleStateInfo = vk::PipelineMultisampleStateCreateInfo()

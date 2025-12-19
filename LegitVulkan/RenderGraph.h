@@ -652,34 +652,43 @@ namespace legit
         size_t setIndex;
       };
       using BindDescriptorSetFunc = std::function<void(const DescriptorSetBindings &bindings)>;
-      PassContext2(BindDescriptorSetFunc bindDescritproSetFunc) :
-        bindDescritproSetFunc(bindDescritproSetFunc)
+      using DrawIndirectFunc = std::function<void(legit::Buffer *buf)>;
+      
+      PassContext2(BindDescriptorSetFunc bindDescriptorSetFunc) :
+        bindDescriptorSetFunc(bindDescriptorSetFunc)
       {
       }
       void BindDescriptorSet(const DescriptorSetBindings &bindings)
       {
-        bindDescritproSetFunc(bindings);
+        bindDescriptorSetFunc(bindings);
       }
       vk::CommandBuffer GetCommandBuffer()
       {
         return commandBuffer;
       }
     private:
-      BindDescriptorSetFunc bindDescritproSetFunc;
+      BindDescriptorSetFunc bindDescriptorSetFunc;
       vk::CommandBuffer commandBuffer;
       friend class RenderGraph;
     };
     
     struct RenderPassContext2 : public PassContext2
     {
-      RenderPassContext2(PassContext2::BindDescriptorSetFunc func) : PassContext2(func)
+      RenderPassContext2(PassContext2::BindDescriptorSetFunc bindDescriptorSetFunc, DrawIndirectFunc drawIndirectFunc) :
+        PassContext2(bindDescriptorSetFunc),
+        drawIndirectFunc(drawIndirectFunc)
       {
+      }
+      void DrawIndirect(legit::Buffer *indirectBuf)
+      {
+        drawIndirectFunc(indirectBuf);
       }
       legit::RenderPass *GetRenderPass()
       {
         return renderPass;
       }
     private:
+      DrawIndirectFunc drawIndirectFunc;
       legit::RenderPass *renderPass;
       friend class RenderGraph;
     };
@@ -1245,6 +1254,11 @@ namespace legit
                 bindings.setIndex,
                 { descriptorSet },
                 dynamicOffsets);
+            },
+            [&](legit::Buffer *indirectBuf)
+            {
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(indirectBuf, BufferUsageTypes::DrawIndirect));
+              transientCommandBuffer.drawIndirect(indirectBuf->GetHandle(), 0, 1, sizeof(uint32_t) * 4);
             });
             // for (auto storageBuffer : bindings.vertexBuffers)
             // {
