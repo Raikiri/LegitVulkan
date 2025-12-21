@@ -1426,22 +1426,22 @@ namespace legit
 
               for (auto binding : bindings.imageSamplerBindings)
               {
-                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderRead));
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::ComputeShaderRead));
               }
 
               for (auto binding : bindings.textureBindings)
               {
-                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderRead));
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::ComputeShaderRead));
               }
 
               for (auto &binding : bindings.storageImageBindings)
               {
-                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::GraphicsShaderReadWrite));
+                AppendVectors(imageBarriers, stateTracker.TransitionImageAndCreateBarriers(binding.imageView, ImageUsageTypes::ComputeShaderReadWrite));
               }
 
               for (auto storageBuffer : bindings.storageBufferBindings)
               {
-                AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer.buffer, BufferUsageTypes::GraphicsShaderReadWrite));
+                AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer.buffer, BufferUsageTypes::ComputeShaderReadWrite));
               }
 
               auto descriptorSet = descriptorSetCache->GetDescriptorSet(*bindings.shaderDataSetInfo, descriptoSetBindings);
