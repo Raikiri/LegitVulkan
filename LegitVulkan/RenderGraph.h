@@ -623,6 +623,11 @@ namespace legit
           storageBufferBindings.push_back(shaderDataSetInfo->MakeStorageBufferBinding(name, buffer));
           return *this;
         }
+        DescriptorSetBindings &AddAccelerationStructureBinding(std::string name, legit::AccelerationStructure *accelerationStructure)
+        {
+          accelerationStructureBindings.push_back(shaderDataSetInfo->MakeAccelerationStructureBinding(name, accelerationStructure));
+          return *this;
+        }
         
         struct UniformBinding
         {
@@ -646,6 +651,7 @@ namespace legit
         std::vector<legit::SamplerBinding> samplerBindings;
         std::vector<legit::StorageImageBinding> storageImageBindings;
         std::vector<legit::StorageBufferBinding> storageBufferBindings;
+        std::vector<legit::AccelerationStructureBinding> accelerationStructureBindings;
         std::vector<UniformBinding> uniformBindings;
         const legit::DescriptorSetLayoutKey *shaderDataSetInfo;
         const vk::PipelineLayout pipelineLayout;
@@ -1220,7 +1226,8 @@ namespace legit
                 .SetTextureBindings(bindings.textureBindings)
                 .SetSamplerBindings(bindings.samplerBindings)
                 .SetStorageImageBindings(bindings.storageImageBindings)
-                .SetStorageBufferBindings(bindings.storageBufferBindings);
+                .SetStorageBufferBindings(bindings.storageBufferBindings)
+                .SetAccelerationStructureBindings(bindings.accelerationStructureBindings);
 
               for (auto binding : bindings.imageSamplerBindings)
               {
@@ -1422,7 +1429,9 @@ namespace legit
                 .SetTextureBindings(bindings.textureBindings)
                 .SetSamplerBindings(bindings.samplerBindings)
                 .SetStorageImageBindings(bindings.storageImageBindings)
-                .SetStorageBufferBindings(bindings.storageBufferBindings);
+                .SetStorageBufferBindings(bindings.storageBufferBindings)
+                .SetAccelerationStructureBindings(bindings.accelerationStructureBindings);
+
 
               for (auto binding : bindings.imageSamplerBindings)
               {

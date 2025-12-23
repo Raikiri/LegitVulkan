@@ -9,6 +9,7 @@ namespace legit
   class Shader;
   class Sampler;
   class ImageView;
+  class AccelerationStructure;
   class Buffer;
 
   template<typename Base>
@@ -131,6 +132,22 @@ namespace legit
     uint32_t shaderBindingId;
   };
 
+  struct AccelerationStructureBinding
+  {
+    AccelerationStructureBinding() : accelerationStructure(nullptr) {}
+    AccelerationStructureBinding(legit::AccelerationStructure *_accelerationStructure, uint32_t _shaderBindingId) : accelerationStructure(_accelerationStructure), shaderBindingId(_shaderBindingId)
+    {
+      assert(_accelerationStructure);
+    }
+    bool operator < (const AccelerationStructureBinding &other) const
+    {
+      return std::tie(accelerationStructure, shaderBindingId) < std::tie(other.accelerationStructure, other.shaderBindingId);
+    }
+    legit::AccelerationStructure *accelerationStructure;
+    uint32_t shaderBindingId;
+  };
+
+  
   class DescriptorSetLayoutKey
   {
   public:
@@ -148,6 +165,8 @@ namespace legit
     using StorageBufferId = ShaderResourceId<StorageBufferBase>;
     struct StorageImageBase;
     using StorageImageId = ShaderResourceId<StorageImageBase>;
+    struct AccelerationStructureBase;
+    using AccelerationStructureId = ShaderResourceId<AccelerationStructureBase>;
 
 
     struct UniformData
@@ -227,6 +246,17 @@ namespace legit
     struct StorageImageData
     {
       bool operator<(const StorageImageData &other) const
+      {
+        return std::tie(name, shaderBindingIndex) < std::tie(other.name, other.shaderBindingIndex);
+      }
+
+      std::string name;
+      uint32_t shaderBindingIndex;
+      vk::ShaderStageFlags stageFlags;
+    };
+    struct AccelerationStructureData
+    {
+      bool operator<(const AccelerationStructureData &other) const
       {
         return std::tie(name, shaderBindingIndex) < std::tie(other.name, other.shaderBindingIndex);
       }
@@ -501,6 +531,44 @@ namespace legit
       auto storageImageInfo = GetStorageImageInfo(imageId);
       return StorageImageBinding(_imageView, storageImageInfo.shaderBindingIndex);
     }
+    
+    size_t GetAccelerationStructuresCount() const
+    {
+      return accelerationStructureDatum.size();
+    }
+    void GetAccelerationStructureIds(AccelerationStructureId *dstAccelerationStructureIds, size_t count = -1, size_t offset = 0) const
+    {
+      if (count == -1)
+        count = accelerationStructureDatum.size();
+      assert(count + offset <= accelerationStructureDatum.size());
+      for (size_t index = offset; index < offset + count; index++)
+        dstAccelerationStructureIds[index] = AccelerationStructureId(index);
+    }
+    AccelerationStructureId GetAccelerationStructureId(std::string accelerationStructureName) const
+    {
+      auto it = accelerationStructureNameToIds.find(accelerationStructureName);
+      if (it == accelerationStructureNameToIds.end())
+        return AccelerationStructureId();
+      return it->second;
+    }
+    AccelerationStructureId GetAccelerationStructureId(uint32_t bufferBindingId) const
+    {
+      auto it = accelerationStructureBindingToIds.find(bufferBindingId);
+      if (it == accelerationStructureBindingToIds.end())
+        return AccelerationStructureId();
+      return it->second;
+    }
+    AccelerationStructureData GetAccelerationStructureInfo(AccelerationStructureId accelerationStructureId) const
+    {
+      return accelerationStructureDatum[accelerationStructureId.id];
+    }
+    AccelerationStructureBinding MakeAccelerationStructureBinding(std::string accelerationStructureName, legit::AccelerationStructure *_accelerationStructure) const
+    {
+      auto accelerationStructureId = GetAccelerationStructureId(accelerationStructureName);
+      assert(accelerationStructureId.IsValid());
+      auto accelerationStructureInfo = GetAccelerationStructureInfo(accelerationStructureId);
+      return AccelerationStructureBinding(_accelerationStructure, accelerationStructureInfo.shaderBindingIndex);
+    }
 
     uint32_t GetTotalConstantBufferSize() const
     {
@@ -515,8 +583,8 @@ namespace legit
     bool operator<(const DescriptorSetLayoutKey &other) const
     {
       return 
-        std::tie(uniformDatum, uniformBufferDatum, imageSamplerDatum, textureDatum, samplerDatum, storageBufferDatum, storageImageDatum) < 
-        std::tie(other.uniformDatum, other.uniformBufferDatum, other.imageSamplerDatum, other.textureDatum, other.samplerDatum, other.storageBufferDatum, other.storageImageDatum);
+        std::tie(uniformDatum, uniformBufferDatum, imageSamplerDatum, textureDatum, samplerDatum, storageBufferDatum, storageImageDatum, accelerationStructureDatum) < 
+        std::tie(other.uniformDatum, other.uniformBufferDatum, other.imageSamplerDatum, other.textureDatum, other.samplerDatum, other.storageBufferDatum, other.storageImageDatum, other.accelerationStructureDatum);
     }
 
     static DescriptorSetLayoutKey Merge(DescriptorSetLayoutKey *setLayouts, size_t setsCount)
@@ -534,6 +602,7 @@ namespace legit
       std::set<uint32_t> samplerBindings;
       std::set<uint32_t> storageBufferBindings;
       std::set<uint32_t> storageImageBindings;
+      std::set<uint32_t> accelerationStructureBindings;
 
       for (size_t setIndex = 0; setIndex < setsCount; setIndex++)
       {
@@ -561,6 +630,10 @@ namespace legit
         for (auto &storageImageData : setLayout.storageImageDatum)
         {
           storageImageBindings.insert(storageImageData.shaderBindingIndex);
+        }
+        for (auto &accelerationStructureData : setLayout.accelerationStructureDatum)
+        {
+          accelerationStructureBindings.insert(accelerationStructureData.shaderBindingIndex);
         }
       }
 
@@ -772,6 +845,37 @@ namespace legit
           }
         }
       }
+      
+      for (auto &accelerationStructureBinding : accelerationStructureBindings)
+      {
+        AccelerationStructureId dstAccelerationStructureId;
+        for (size_t setIndex = 0; setIndex < setsCount; setIndex++)
+        {
+          auto &srcLayout = setLayouts[setIndex];
+          auto srcAccelerationStructureId = srcLayout.GetAccelerationStructureId(accelerationStructureBinding);
+          if (!srcAccelerationStructureId.IsValid()) continue;
+          const auto &srcAccelerationStructure = srcLayout.accelerationStructureDatum[srcAccelerationStructureId.id];
+          assert(srcAccelerationStructure.shaderBindingIndex == accelerationStructureBinding);
+
+          if (!dstAccelerationStructureId.IsValid())
+          {
+            dstAccelerationStructureId = AccelerationStructureId(res.accelerationStructureDatum.size());
+            res.accelerationStructureDatum.push_back(AccelerationStructureData());
+            auto &dstAccelerationStructure = res.accelerationStructureDatum.back();
+
+            dstAccelerationStructure.shaderBindingIndex = srcAccelerationStructure.shaderBindingIndex;
+            dstAccelerationStructure.name = srcAccelerationStructure.name;
+            dstAccelerationStructure.stageFlags = srcAccelerationStructure.stageFlags;
+          }
+          else
+          {
+            auto &dstAccelerationStructure = res.accelerationStructureDatum[dstAccelerationStructureId.id];
+            dstAccelerationStructure.stageFlags |= srcAccelerationStructure.stageFlags;
+            assert(srcAccelerationStructure.shaderBindingIndex == dstAccelerationStructure.shaderBindingIndex);
+            assert(srcAccelerationStructure.name == dstAccelerationStructure.name);
+          }
+        }
+      }
 
 
       res.RebuildIndex();
@@ -849,6 +953,16 @@ namespace legit
         storageImageNameToIds[storageImageData.name] = storageImageId;
         storageImageBindingToIds[storageImageData.shaderBindingIndex] = storageImageId;
       }
+      
+      accelerationStructureNameToIds.clear();
+      accelerationStructureBindingToIds.clear();
+      for (size_t accelerationStructureIndex = 0; accelerationStructureIndex < accelerationStructureDatum.size(); accelerationStructureIndex++)
+      {
+        AccelerationStructureId accelerationStructureId = AccelerationStructureId(accelerationStructureIndex);
+        auto &accelerationStructureData = accelerationStructureDatum[accelerationStructureIndex];
+        accelerationStructureNameToIds[accelerationStructureData.name] = accelerationStructureId;
+        accelerationStructureBindingToIds[accelerationStructureData.shaderBindingIndex] = accelerationStructureId;
+      }
     }
 
 
@@ -863,6 +977,7 @@ namespace legit
     std::vector<SamplerData> samplerDatum;
     std::vector<StorageBufferData> storageBufferDatum;
     std::vector<StorageImageData> storageImageDatum;
+    std::vector<AccelerationStructureData> accelerationStructureDatum;
 
     std::map<std::string, UniformId> uniformNameToIds;
     std::map<std::string, UniformBufferId> uniformBufferNameToIds;
@@ -877,6 +992,8 @@ namespace legit
     std::map<uint32_t, StorageBufferId> storageBufferBindingToIds;
     std::map<std::string, StorageImageId> storageImageNameToIds;
     std::map<uint32_t, StorageImageId> storageImageBindingToIds;
+    std::map<std::string, AccelerationStructureId> accelerationStructureNameToIds;
+    std::map<uint32_t, AccelerationStructureId> accelerationStructureBindingToIds;
   };
   class Shader
   {
@@ -965,6 +1082,7 @@ namespace legit
         std::vector<spirv_cross::Resource> samplers;
         std::vector<spirv_cross::Resource> storageBuffers;
         std::vector<spirv_cross::Resource> storageImages;
+        std::vector<spirv_cross::Resource> accelerationStructures;
       };
       std::vector<SetResources> setResources;
       for (const auto &buffer : resources.uniform_buffers)
@@ -1013,6 +1131,14 @@ namespace legit
         if (setShaderId >= setResources.size())
           setResources.resize(setShaderId + 1);
         setResources[setShaderId].storageImages.push_back(image);
+      }
+
+      for (const auto &accelerationStructure : resources.acceleration_structures)
+      {
+        uint32_t setShaderId = compiler.get_decoration(accelerationStructure.id, spv::DecorationDescriptorSet);
+        if (setShaderId >= setResources.size())
+          setResources.resize(setShaderId + 1);
+        setResources[setShaderId].accelerationStructures.push_back(accelerationStructure);
       }
 
       this->descriptorSetLayoutKeys.resize(setResources.size());
@@ -1158,6 +1284,19 @@ namespace legit
           storageImageData.name = image.name;
           //type?
         }
+        
+        for (auto accelerationStructure : setResources[setIndex].accelerationStructures)
+        {
+          auto accelerationStructureId = DescriptorSetLayoutKey::AccelerationStructureId(descriptorSetLayoutKey.accelerationStructureDatum.size());
+
+          uint32_t shaderBindingIndex = compiler.get_decoration(accelerationStructure.id, spv::DecorationBinding);
+          descriptorSetLayoutKey.accelerationStructureDatum.push_back(DescriptorSetLayoutKey::AccelerationStructureData());
+          auto &accelerationStructureData = descriptorSetLayoutKey.accelerationStructureDatum.back();
+          accelerationStructureData.shaderBindingIndex = shaderBindingIndex;
+          accelerationStructureData.stageFlags = stageFlags;
+          accelerationStructureData.name = accelerationStructure.name;
+        }
+        
         descriptorSetLayoutKey.RebuildIndex();
       }
     }

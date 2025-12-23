@@ -38,6 +38,7 @@ namespace legit
     {
       this->logicalDevice = logicalDevice;
       this->size = size;
+      bool allowAllocateDeviceAddress = bool(usageFlags & vk::BufferUsageFlagBits::eShaderDeviceAddress);
       auto bufferInfo = vk::BufferCreateInfo()
         .setSize(size)
         .setUsage(usageFlags)
@@ -46,13 +47,23 @@ namespace legit
 
       vk::MemoryRequirements bufferMemRequirements = logicalDevice.getBufferMemoryRequirements(bufferHandle.get());
 
+      auto allocateFlagsInfo = vk::MemoryAllocateFlagsInfo()
+        .setFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
+
       auto allocInfo = vk::MemoryAllocateInfo()
         .setAllocationSize(bufferMemRequirements.size)
-        .setMemoryTypeIndex(FindMemoryTypeIndex(physicalDevice, bufferMemRequirements.memoryTypeBits, memoryVisibility));
-
+        .setMemoryTypeIndex(FindMemoryTypeIndex(physicalDevice, bufferMemRequirements.memoryTypeBits, memoryVisibility))
+        .setPNext(allowAllocateDeviceAddress ? &allocateFlagsInfo : nullptr);
+      
       bufferMemory = logicalDevice.allocateMemoryUnique(allocInfo);
 
       logicalDevice.bindBufferMemory(bufferHandle.get(), bufferMemory.get(), 0);
+    }
+    vk::DeviceAddress GetDeviceAddress()
+    {
+      auto deviceAddressInfo = vk::BufferDeviceAddressInfo()
+        .setBuffer(bufferHandle.get());
+      return logicalDevice.getBufferAddress(deviceAddressInfo);
     }
   private:
     vk::UniqueBuffer bufferHandle;

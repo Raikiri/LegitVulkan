@@ -8,6 +8,7 @@ namespace legit
     std::vector<SamplerBinding> samplerBindings;
     std::vector<StorageBufferBinding> storageBufferBindings;
     std::vector<StorageImageBinding> storageImageBindings;
+    std::vector<AccelerationStructureBinding> accelerationStructureBindings;
 
     DescriptorSetBindings &SetUniformBufferBindings(std::vector<UniformBufferBinding> uniformBufferBindings)
     {
@@ -37,6 +38,11 @@ namespace legit
     DescriptorSetBindings &SetStorageImageBindings(std::vector<StorageImageBinding> storageImageBindings)
     {
       this->storageImageBindings = storageImageBindings;
+      return *this;
+    }
+    DescriptorSetBindings &SetAccelerationStructureBindings(std::vector<AccelerationStructureBinding> accelerationStructureBindings)
+    {
+      this->accelerationStructureBindings = accelerationStructureBindings;
       return *this;
     }
   };
@@ -76,6 +82,11 @@ namespace legit
         .setDescriptorCount(1000)
         .setType(vk::DescriptorType::eStorageImage);
       poolSizes.push_back(storageImagePoolSize);
+
+      auto accelerationStructurePoolSize = vk::DescriptorPoolSize()
+        .setDescriptorCount(1000)
+        .setType(vk::DescriptorType::eAccelerationStructureKHR);
+      poolSizes.push_back(accelerationStructurePoolSize);
 
       auto poolCreateInfo = vk::DescriptorPoolCreateInfo()
         .setMaxSets(1000)
@@ -182,6 +193,21 @@ namespace legit
             .setBinding(imageInfo.shaderBindingIndex)
             .setDescriptorCount(1) //if this is an array of buffers
             .setDescriptorType(vk::DescriptorType::eStorageImage)
+            .setStageFlags(imageInfo.stageFlags);
+          layoutBindings.push_back(imageLayoutBinding);
+        }
+        
+        std::vector<legit::DescriptorSetLayoutKey::AccelerationStructureId> accelerationStructureIds;
+        accelerationStructureIds.resize(descriptorSetLayoutKey.GetAccelerationStructuresCount());
+        descriptorSetLayoutKey.GetAccelerationStructureIds(accelerationStructureIds.data());
+
+        for (auto accelerationStructureId : accelerationStructureIds)
+        {
+          auto imageInfo = descriptorSetLayoutKey.GetAccelerationStructureInfo(accelerationStructureId);
+          auto imageLayoutBinding = vk::DescriptorSetLayoutBinding()
+            .setBinding(imageInfo.shaderBindingIndex)
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
             .setStageFlags(imageInfo.stageFlags);
           layoutBindings.push_back(imageLayoutBinding);
         }
@@ -394,6 +420,36 @@ namespace legit
 
           setWrites.push_back(setWrite);
         }
+        
+        assert(setBindings.accelerationStructureBindings.size() == setLayoutKey.GetAccelerationStructuresCount());
+        std::vector<vk::WriteDescriptorSetAccelerationStructureKHR> accelerationStructureWrites(setBindings.accelerationStructureBindings.size());
+        std::vector<vk::AccelerationStructureKHR> accelerationStructureArray(setBindings.accelerationStructureBindings.size());
+        for (size_t accelerationStructureIndex = 0; accelerationStructureIndex < setBindings.accelerationStructureBindings.size(); accelerationStructureIndex++)
+        {
+          auto &accelerationStructureBinding = setBindings.accelerationStructureBindings[accelerationStructureIndex];
+
+          {
+            auto accelerationStructureId = setLayoutKey.GetAccelerationStructureId(accelerationStructureBinding.shaderBindingId);
+            assert(accelerationStructureId.IsValid());
+            auto accelerationStructureData = setLayoutKey.GetAccelerationStructureInfo(accelerationStructureId);
+            //assert(accelerationStructureData.format == storageBinding.format);
+          }
+
+          accelerationStructureArray[accelerationStructureIndex] = accelerationStructureBinding.accelerationStructure->GetHandle();
+          accelerationStructureWrites[accelerationStructureIndex] = vk::WriteDescriptorSetAccelerationStructureKHR()
+            .setAccelerationStructureCount(1)
+            .setPAccelerationStructures(&accelerationStructureArray[accelerationStructureIndex]);
+            
+          auto setWrite = vk::WriteDescriptorSet()
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+            .setDstBinding(accelerationStructureBinding.shaderBindingId)
+            .setDstSet(descriptorSet.get())
+            .setPNext(&accelerationStructureWrites[accelerationStructureIndex]);
+
+          setWrites.push_back(setWrite);
+        }
+        
         logicalDevice.updateDescriptorSets(setWrites, {});
       }
       return descriptorSet.get();

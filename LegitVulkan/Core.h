@@ -11,11 +11,11 @@ namespace legit
   public:    
     inline Core(
       Span<std::string> instanceExtensions,
+      Span<std::string> deviceExtensions,
       std::optional<WindowDesc> compatibleWindowDesc,
       bool enableDebugging,
       vk::PhysicalDeviceFeatures physicalDeviceFeatures = {},
-      vk::PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features = {},
-      vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT physicalDeviceShaderAtomicFloatFeatures = {});
+      void *physicalDeviceChainFeatures = nullptr);
 
     inline ~Core();
     inline void ClearCaches();
@@ -81,8 +81,7 @@ namespace legit
       Span<const char*> deviceExtensions,
       Span<const char*> validationLayers,
       vk::PhysicalDeviceFeatures physicalDeviceFeatures,
-      vk::PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features,
-      vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT physicalDeviceShaderAtomicFloatFeatures);
+      void *physicalDeviceChainFeatures);
     static inline vk::Queue GetDeviceQueue(vk::Device logicalDevice, uint32_t queueFamilyIndex);
     static inline vk::UniqueCommandPool CreateCommandPool(vk::Device logicalDevice, uint32_t familyIndex);
 

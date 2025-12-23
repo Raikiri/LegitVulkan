@@ -18,11 +18,11 @@ namespace legit
 
   Core::Core(
     Span<std::string> instanceExtensions,
+    Span<std::string> deviceExtensions,
     std::optional<WindowDesc> compatibleWindowDesc,
     bool enableDebugging,
     vk::PhysicalDeviceFeatures physicalDeviceFeatures,
-    vk::PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features,
-    vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT physicalDeviceShaderAtomicFloatFeatures)
+    void *physicalDeviceChainFeatures)
   {
     std::vector<const char*> resIntanceExtensions = GetCStrArray(instanceExtensions);
     std::vector<const char*> validationLayers;
@@ -32,11 +32,13 @@ namespace legit
       resIntanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
-    std::vector<const char*> deviceExtensions;
-    deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-    deviceExtensions.push_back("VK_EXT_shader_atomic_float");
+    std::vector<const char*> resDeviceExtensions = GetCStrArray(deviceExtensions);
+    resDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    resDeviceExtensions.push_back("VK_EXT_shader_atomic_float");
 
     this->instance = CreateInstance(resIntanceExtensions, validationLayers);
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(this->instance.get());
+    
     //loader = vk::DispatchLoaderDynamic();
     loader = vk::detail::DispatchLoaderDynamic(instance.get(), vkGetInstanceProcAddr);
 
@@ -64,11 +66,12 @@ namespace legit
     this->logicalDevice = CreateLogicalDevice(
       physicalDevice,
       queueFamilyIndices,
-      deviceExtensions,
+      resDeviceExtensions,
       validationLayers,
       physicalDeviceFeatures,
-      physicalDeviceVulkan12Features,
-      physicalDeviceShaderAtomicFloatFeatures);
+      physicalDeviceChainFeatures);
+
+
     this->graphicsQueue = GetDeviceQueue(logicalDevice.get(), queueFamilyIndices.graphicsFamilyIndex);
     this->presentQueue = GetDeviceQueue(logicalDevice.get(), queueFamilyIndices.presentFamilyIndex);
     this->commandPool = CreateCommandPool(logicalDevice.get(), queueFamilyIndices.graphicsFamilyIndex);
@@ -281,8 +284,7 @@ namespace legit
     Span<const char*> deviceExtensions,
     Span<const char*> validationLayers,
     vk::PhysicalDeviceFeatures physicalDeviceFeatures,
-    vk::PhysicalDeviceVulkan12Features physicalDeviceVulkan12Features,
-    vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT physicalDeviceShaderAtomicFloatFeatures
+    void *physicalDeviceChainFeatures
   )
   {
     std::set<uint32_t> uniqueQueueFamilyIndices = { familyIndices.graphicsFamilyIndex, familyIndices.presentFamilyIndex };
@@ -303,14 +305,10 @@ namespace legit
       .setPQueueCreateInfos(queueCreateInfos.data())
       .setPEnabledFeatures(&physicalDeviceFeatures)
       .setPEnabledExtensionNames(deviceExtensions)
-      .setPEnabledLayerNames(validationLayers);
+      .setPEnabledLayerNames(validationLayers)
+      .setPNext(physicalDeviceChainFeatures);
 
-    vk::StructureChain<vk::DeviceCreateInfo, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceShaderAtomicFloatFeaturesEXT> chain = {
-      deviceCreateInfo,
-      physicalDeviceVulkan12Features,
-      physicalDeviceShaderAtomicFloatFeatures };
-
-    return physicalDevice.createDeviceUnique(chain.get<vk::DeviceCreateInfo>());
+    return physicalDevice.createDeviceUnique(deviceCreateInfo);
   }
   vk::Queue Core::GetDeviceQueue(vk::Device logicalDevice, uint32_t queueFamilyIndex)
   {

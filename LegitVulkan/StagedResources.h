@@ -27,6 +27,10 @@ namespace legit
     {
       return deviceLocalBuffer->GetHandle();
     }
+    legit::Buffer *GetDeviceLocalBuffer()
+    {
+      return deviceLocalBuffer.get();
+    }
   private:
     std::unique_ptr<legit::Buffer> stagingBuffer;
     std::unique_ptr<legit::Buffer> deviceLocalBuffer;

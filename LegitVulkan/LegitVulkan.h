@@ -14,6 +14,12 @@
 //#include <Windows.h>
 
 #include <glm/glm.hpp>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/vec4.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/gtx/transform.hpp>
+
 #include "Span.h"
 #include "Handles.h"
 #include "Pool.h"
@@ -32,6 +38,7 @@
 #include "Sampler.h"
 #include "Pipeline.h"
 #include "ImageView.h"
+#include "AccelerationStructure.h"
 #include "Swapchain.h"
 #include "RenderPass.h"
 #include "Framebuffer.h"
@@ -46,6 +53,11 @@
 #include "CoreImpl.h"
 
 #include "PresentQueue.h"
+
+#include "ExecuteOnceQueue.h"
+#include "BLAS.h"
+#include "TLAS.h"
+
 
 #include "StagedResources.h"
 #include "ImageLoader.h"
