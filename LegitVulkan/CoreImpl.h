@@ -16,6 +16,80 @@ namespace legit
     return res;
   }
 
+  static bool CheckInstanceExtensions(std::vector<const char*> requiredExtensions)
+  {
+    auto supportedExtensions = vk::enumerateInstanceExtensionProperties();
+    std::set<std::string> supportedExtensionsMap;
+
+    for (auto supportedExtension : supportedExtensions)
+    {
+      supportedExtensionsMap.insert(supportedExtension.extensionName);
+    }
+
+    for (auto requiredExtension : requiredExtensions)
+    {
+      if (!supportedExtensionsMap.count(std::string(requiredExtension)))
+      {
+        std::cout << "[CRITICAL]: Unsupported Instance extension: " << requiredExtension << "\n";
+        std::cout << "Supported Instance extensions:\n";
+        for (auto supportedExtension : supportedExtensions)
+        {
+          std::cout << "  " << supportedExtension.extensionName << "\n";
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool CheckValidationLayers(std::vector<const char*> requiredLayers)
+  {
+    auto supportedLayers = vk::enumerateInstanceLayerProperties();
+    std::set<std::string> supportedLayersSet;
+    for (auto supportedLayer : supportedLayers)
+    {
+      supportedLayersSet.insert(supportedLayer.layerName);
+    }
+    for (auto requiredLayer : requiredLayers)
+    {
+      if (!supportedLayersSet.count(std::string(requiredLayer)))
+      {
+        std::cout << "[CRITICAL]: Unsupported ValidationLayer: " << requiredLayer << "\n";
+        std::cout << "Supported ValidationLayers:\n";
+        for (auto supportedLayer : supportedLayers)
+        {
+          std::cout << "  " << supportedLayer << "\n";
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool CheckDeviceExtensions(vk::PhysicalDevice physicalDevice, std::vector<const char*> requiredExtensions)
+  {
+    auto supportedExtensions = physicalDevice.enumerateDeviceExtensionProperties();
+    std::set<std::string> supportedExtensionsMap;
+    for (auto supportedExtension : supportedExtensions)
+    {
+      supportedExtensionsMap.insert(supportedExtension.extensionName);
+    }
+    for (auto requiredExtension : requiredExtensions)
+    {
+      if (!supportedExtensionsMap.count(std::string(requiredExtension)))
+      {
+        std::cout << "[CRITICAL]: Unsupported PhysicalDevice extension: " << requiredExtension << "\n";
+        std::cout << "Supported Device extensions:\n";
+        for (auto supportedExtension : supportedExtensions)
+        {
+          std::cout << "  " << supportedExtension.extensionName << "\n";
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
   Core::Core(
     Span<std::string> instanceExtensions,
     Span<std::string> deviceExtensions,
@@ -29,12 +103,26 @@ namespace legit
     if (enableDebugging)
     {
       validationLayers.push_back("VK_LAYER_KHRONOS_validation");
-      resIntanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
     std::vector<const char*> resDeviceExtensions = GetCStrArray(deviceExtensions);
     resDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     resDeviceExtensions.push_back("VK_EXT_shader_atomic_float");
+
+    if (!CheckInstanceExtensions(resIntanceExtensions))
+    {
+      throw std::runtime_error("[CRITICAL]: Instance extension unsupported");
+    }
+    if (!CheckValidationLayers(validationLayers))
+    {
+      std::cout << "[BAD BUT NOT CRITICAL]: Validation layer unsupported, falling back to not using validation\n";
+      validationLayers.clear();
+      enableDebugging = false;
+    }
+    else
+    {
+      resIntanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
 
     this->instance = CreateInstance(resIntanceExtensions, validationLayers);
     VULKAN_HPP_DEFAULT_DISPATCHER.init(this->instance.get());
@@ -42,18 +130,16 @@ namespace legit
     //loader = vk::DispatchLoaderDynamic();
     loader = vk::detail::DispatchLoaderDynamic(instance.get(), vkGetInstanceProcAddr);
 
-    auto prop = vk::enumerateInstanceLayerProperties();
     
+
     if(enableDebugging)
       this->debugUtilsMessenger = CreateDebugUtilsMessenger(instance.get(), DebugMessageCallback, loader);
     this->physicalDevice = FindPhysicalDevice(instance.get());
     
-    /*std::cout << "Supported extensions:\n";
-    auto extensions = physicalDevice.enumerateDeviceExtensionProperties();
-    for (auto extension : extensions)
+    if (!CheckDeviceExtensions(physicalDevice, resDeviceExtensions))
     {
-      std::cout << "  " << extension.extensionName << "\n";
-    }*/
+      throw std::runtime_error("Device extension unsupported");
+    }
 
     if(compatibleWindowDesc)
     {
