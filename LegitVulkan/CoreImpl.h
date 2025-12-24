@@ -58,7 +58,7 @@ namespace legit
         std::cout << "Supported ValidationLayers:\n";
         for (auto supportedLayer : supportedLayers)
         {
-          std::cout << "  " << supportedLayer << "\n";
+          std::cout << "  " << supportedLayer.layerName << "\n";
         }
         return false;
       }
