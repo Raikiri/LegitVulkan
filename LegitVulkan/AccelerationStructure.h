@@ -42,7 +42,7 @@ namespace legit
     {
       for(uint32_t row = 0; row < 4; row++)
       {
-        resTransform.matrix[col][row] = transform[col][row];
+        resTransform.matrix[col][row] = transform[row][col];
       }
     }
     return resTransform;
