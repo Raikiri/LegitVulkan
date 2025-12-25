@@ -127,7 +127,7 @@ namespace legit
           auto bufferInfo = descriptorSetLayoutKey.GetStorageBufferInfo(storageBufferId);
           auto bufferLayoutBinding = vk::DescriptorSetLayoutBinding()
             .setBinding(bufferInfo.shaderBindingIndex)
-            .setDescriptorCount(1) //if this is an array of buffers
+            .setDescriptorCount(bufferInfo.count)
             .setDescriptorType(vk::DescriptorType::eStorageBuffer)
             .setStageFlags(bufferInfo.stageFlags);
           layoutBindings.push_back(bufferLayoutBinding);
@@ -363,8 +363,14 @@ namespace legit
         
         assert(setBindings.storageBufferBindings.size() == setLayoutKey.GetStorageBuffersCount());
 
-        std::vector<vk::DescriptorBufferInfo> storageBufferInfos(setBindings.storageBufferBindings.size());
+        size_t bufferInfosCount = 0;
+        for (size_t storageBufferIndex = 0; storageBufferIndex < setBindings.storageBufferBindings.size(); storageBufferIndex++)
+        {
+          bufferInfosCount += setBindings.storageBufferBindings[storageBufferIndex].descriptors.size();
+        }
+        std::vector<vk::DescriptorBufferInfo> storageBufferInfos(bufferInfosCount);
 
+        size_t bufferInfoStart = 0;
         for (size_t storageBufferIndex = 0; storageBufferIndex < setBindings.storageBufferBindings.size(); storageBufferIndex++)
         {
           auto &storageBinding = setBindings.storageBufferBindings[storageBufferIndex];
@@ -376,20 +382,23 @@ namespace legit
             //assert(storageBufferData.size == storageBinding.size);
           }
 
-          storageBufferInfos[storageBufferIndex] = vk::DescriptorBufferInfo()
-            .setBuffer(storageBinding.buffer->GetHandle())
-            .setOffset(storageBinding.offset)
-            .setRange(storageBinding.size);
-
+          for(size_t descIdx = 0; descIdx < storageBinding.descriptors.size(); descIdx++)
+          {
+            storageBufferInfos[bufferInfoStart + descIdx] = vk::DescriptorBufferInfo()
+              .setBuffer(storageBinding.descriptors[descIdx].buffer->GetHandle())
+              .setOffset(storageBinding.descriptors[descIdx].offset)
+              .setRange(storageBinding.descriptors[descIdx].size);
+          }
           auto setWrite = vk::WriteDescriptorSet()
-            .setDescriptorCount(1)
+            .setDescriptorCount(storageBinding.descriptors.size())
             .setDescriptorType(vk::DescriptorType::eStorageBuffer)
             .setDstBinding(storageBinding.shaderBindingId)
             .setDstSet(descriptorSet.get())
-            .setPBufferInfo(&storageBufferInfos[storageBufferIndex]);
-
+            .setPBufferInfo(storageBufferInfos.data() + bufferInfoStart);
+          bufferInfoStart += storageBinding.descriptors.size();
           setWrites.push_back(setWrite);
         }
+        assert(bufferInfoStart == bufferInfosCount);
 
         assert(setBindings.storageImageBindings.size() == setLayoutKey.GetStorageImagesCount());
         std::vector<vk::DescriptorImageInfo> storageImageInfos(setBindings.storageImageBindings.size());

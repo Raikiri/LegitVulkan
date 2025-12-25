@@ -623,6 +623,11 @@ namespace legit
           storageBufferBindings.push_back(shaderDataSetInfo->MakeStorageBufferBinding(name, buffer));
           return *this;
         }
+        DescriptorSetBindings &AddStorageBufferBinding(std::string name, std::vector<legit::Buffer*> buffers)
+        {
+          storageBufferBindings.push_back(shaderDataSetInfo->MakeStorageBufferBinding(name, buffers));
+          return *this;
+        }
         DescriptorSetBindings &AddAccelerationStructureBinding(std::string name, legit::AccelerationStructure *accelerationStructure)
         {
           accelerationStructureBindings.push_back(shaderDataSetInfo->MakeAccelerationStructureBinding(name, accelerationStructure));
@@ -1268,7 +1273,10 @@ namespace legit
 
               for (auto storageBuffer : bindings.storageBufferBindings)
               {
-                AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer.buffer, BufferUsageTypes::GraphicsShaderReadWrite));
+                for(auto desc : storageBuffer.descriptors)
+                {
+                  AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(desc.buffer, BufferUsageTypes::GraphicsShaderReadWrite));
+                }
               }
 
               auto descriptorSet = descriptorSetCache->GetDescriptorSet(*bindings.shaderDataSetInfo, descriptoSetBindings);
@@ -1472,7 +1480,10 @@ namespace legit
 
               for (auto storageBuffer : bindings.storageBufferBindings)
               {
-                AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(storageBuffer.buffer, BufferUsageTypes::ComputeShaderReadWrite));
+                for(auto desc : storageBuffer.descriptors)
+                {
+                  AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(desc.buffer, BufferUsageTypes::ComputeShaderReadWrite));
+                }
               }
 
               auto descriptorSet = descriptorSetCache->GetDescriptorSet(*bindings.shaderDataSetInfo, descriptoSetBindings);

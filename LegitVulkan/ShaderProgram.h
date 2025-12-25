@@ -101,20 +101,39 @@ namespace legit
 
   struct StorageBufferBinding
   {
-    StorageBufferBinding() : buffer(nullptr), offset(-1), size(-1) {}
-    StorageBufferBinding(legit::Buffer *_buffer, uint32_t _shaderBindingId, vk::DeviceSize _offset, vk::DeviceSize _size) : buffer(_buffer), shaderBindingId(_shaderBindingId), offset(_offset), size(_size)
+    struct Descriptor
+    {
+      legit::Buffer *buffer = nullptr;
+      vk::DeviceSize offset = vk::DeviceSize(-1);
+      vk::DeviceSize size = vk::DeviceSize(-1);
+      bool operator < (const Descriptor &other) const
+      {
+        return std::tie(buffer, offset, size) < std::tie(other.buffer, other.offset, other.size);
+      }
+    };
+    
+    StorageBufferBinding() {}
+    StorageBufferBinding(legit::Buffer *_buffer, uint32_t _shaderBindingId, vk::DeviceSize _offset, vk::DeviceSize _size) : shaderBindingId(_shaderBindingId)
     {
       assert(_buffer);
+      Descriptor desc;
+      desc.buffer = _buffer;
+      desc.offset = _offset;
+      desc.size = _size;
+      descriptors.push_back(desc);
+    }
+    
+    StorageBufferBinding(uint32_t _shaderBindingId, std::vector<Descriptor> _descriptors) : shaderBindingId(_shaderBindingId), descriptors(_descriptors)
+    {
     }
 
     bool operator < (const StorageBufferBinding &other) const
     {
-      return std::tie(buffer, shaderBindingId, offset, size) < std::tie(other.buffer, other.shaderBindingId, other.offset, other.size);
+      return std::tie(descriptors, shaderBindingId) < std::tie(other.descriptors, other.shaderBindingId);
     }
-    legit::Buffer *buffer;
+
+    std::vector<Descriptor> descriptors;
     uint32_t shaderBindingId;
-    vk::DeviceSize offset;
-    vk::DeviceSize size;
   };
 
   struct StorageImageBinding
@@ -232,10 +251,11 @@ namespace legit
     {
       bool operator<(const StorageBufferData &other) const
       {
-        return std::tie(name, shaderBindingIndex, podPartSize, arrayMemberSize) < std::tie(other.name, other.shaderBindingIndex, other.podPartSize, other.arrayMemberSize);
+        return std::tie(name, count, shaderBindingIndex, podPartSize, arrayMemberSize) < std::tie(other.name, other.count, other.shaderBindingIndex, other.podPartSize, other.arrayMemberSize);
       }
 
       std::string name;
+      uint32_t count;
       uint32_t shaderBindingIndex;
       vk::ShaderStageFlags stageFlags;
 
@@ -344,6 +364,25 @@ namespace legit
       return StorageBufferBinding(_buffer, storageBufferInfo.shaderBindingIndex, _offset, _size);
     }
 
+    StorageBufferBinding MakeStorageBufferBinding(std::string bufferName, std::vector<legit::Buffer*> _buffers) const
+    {
+      auto storageBufferId = GetStorageBufferId(bufferName);
+      assert(storageBufferId.IsValid());
+      auto storageBufferInfo = GetStorageBufferInfo(storageBufferId);
+      
+      assert(storageBufferInfo.count == 0 || storageBufferInfo.count == _buffers.size());
+      std::vector<StorageBufferBinding::Descriptor> descs;
+      for(auto buffer : _buffers)
+      {
+        StorageBufferBinding::Descriptor desc;
+        desc.buffer = buffer;
+        desc.offset = 0;
+        desc.size = VK_WHOLE_SIZE;
+        descs.push_back(desc);
+      }
+      return StorageBufferBinding(storageBufferInfo.shaderBindingIndex, descs);
+    }
+    
     template<typename MemberType>
     StorageBufferBinding MakeCheckedStorageBufferBinding(std::string bufferName, legit::Buffer* _buffer, vk::DeviceSize _offset = 0, vk::DeviceSize _size = VK_WHOLE_SIZE) const
     {
@@ -799,6 +838,7 @@ namespace legit
 
             dstStorageBuffer.shaderBindingIndex = srcStorageBuffer.shaderBindingIndex;
             dstStorageBuffer.name = srcStorageBuffer.name;
+            dstStorageBuffer.count = srcStorageBuffer.count;
             dstStorageBuffer.arrayMemberSize = srcStorageBuffer.arrayMemberSize;
             dstStorageBuffer.podPartSize = srcStorageBuffer.podPartSize;
             dstStorageBuffer.stageFlags = srcStorageBuffer.stageFlags;
@@ -809,6 +849,7 @@ namespace legit
             dstStorageBuffer.stageFlags |= srcStorageBuffer.stageFlags;
             assert(srcStorageBuffer.shaderBindingIndex == dstStorageBuffer.shaderBindingIndex);
             assert(srcStorageBuffer.name == dstStorageBuffer.name);
+            assert(srcStorageBuffer.count == dstStorageBuffer.count);
             assert(srcStorageBuffer.podPartSize == dstStorageBuffer.podPartSize);
             assert(srcStorageBuffer.arrayMemberSize == dstStorageBuffer.arrayMemberSize);
           }
@@ -1251,10 +1292,11 @@ namespace legit
             if(buffer.name.find("counter.var.") != std::string::npos) continue;
             descriptorSetLayoutKey.storageBufferDatum.emplace_back(DescriptorSetLayoutKey::StorageBufferData());
             auto &bufferData = descriptorSetLayoutKey.storageBufferDatum.back();
-
             bufferData.shaderBindingIndex = shaderBindingIndex;
             bufferData.stageFlags = stageFlags;
             bufferData.name = buffer.name;
+            assert(bufferType.array.size() == 1 || bufferType.array.size() == 0);
+            bufferData.count = bufferType.array.size() == 1 ? bufferType.array[0] : 1u;
             bufferData.podPartSize = 0;
             bufferData.arrayMemberSize = 0;
             bufferData.offsetInSet = 0; //should not be used
