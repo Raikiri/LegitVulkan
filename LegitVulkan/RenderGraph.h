@@ -658,7 +658,6 @@ namespace legit
         size_t setIndex;
       };
       using BindDescriptorSetFunc = std::function<void(const DescriptorSetBindings &bindings)>;
-      using DrawIndirectFunc = std::function<void(legit::Buffer *buf)>;
       
       PassContext2(BindDescriptorSetFunc bindDescriptorSetFunc) :
         bindDescriptorSetFunc(bindDescriptorSetFunc)
@@ -680,6 +679,7 @@ namespace legit
     
     struct RenderPassContext2 : public PassContext2
     {
+      using DrawIndirectFunc = std::function<void(legit::Buffer *buf)>;
       RenderPassContext2(PassContext2::BindDescriptorSetFunc bindDescriptorSetFunc, DrawIndirectFunc drawIndirectFunc) :
         PassContext2(bindDescriptorSetFunc),
         drawIndirectFunc(drawIndirectFunc)
@@ -695,6 +695,28 @@ namespace legit
       }
     private:
       DrawIndirectFunc drawIndirectFunc;
+      legit::RenderPass *renderPass;
+      friend class RenderGraph;
+    };
+    
+    struct ComputePassContext2 : public PassContext2
+    {
+      using DispatchIndirectFunc = std::function<void(legit::Buffer *buf)>;
+      ComputePassContext2(PassContext2::BindDescriptorSetFunc bindDescriptorSetFunc, DispatchIndirectFunc dispatchIndirectFunc) :
+        PassContext2(bindDescriptorSetFunc),
+        dispatchIndirectFunc(dispatchIndirectFunc)
+      {
+      }
+      void DispatchIndirect(legit::Buffer *indirectBuf)
+      {
+        dispatchIndirectFunc(indirectBuf);
+      }
+      legit::RenderPass *GetRenderPass()
+      {
+        return renderPass;
+      }
+    private:
+      DispatchIndirectFunc dispatchIndirectFunc;
       legit::RenderPass *renderPass;
       friend class RenderGraph;
     };
@@ -873,7 +895,7 @@ namespace legit
         profilerTaskColor = glm::packUnorm4x8(glm::vec4(0.0f, 0.5f, 1.0f, 1.0f));
       }
 
-      ComputePassDesc2 &SetRecordFunc(std::function<void(PassContext2)> _recordFunc)
+      ComputePassDesc2 &SetRecordFunc(std::function<void(ComputePassContext2)> _recordFunc)
       {
         this->recordFunc = _recordFunc;
         return *this;
@@ -885,7 +907,7 @@ namespace legit
         return *this;
       }
 
-      std::function<void(PassContext2)> recordFunc;
+      std::function<void(ComputePassContext2)> recordFunc;
 
       std::string profilerTaskName;
       uint32_t profilerTaskColor;
@@ -1413,7 +1435,7 @@ namespace legit
             std::vector<StateTracker::ImageBarrier> imageBarriers;
             std::vector<StateTracker::BufferBarrier> bufferBarriers;
 
-            PassContext2 passContext([&](const PassContext2::DescriptorSetBindings &bindings)
+            ComputePassContext2 passContext([&](const PassContext2::DescriptorSetBindings &bindings)
             {
               auto uniforms = memoryPool->BeginSet(bindings.shaderDataSetInfo);
               for(auto uniformBinding : bindings.uniformBindings)
@@ -1461,6 +1483,11 @@ namespace legit
                 dynamicOffsets.push_back(uniforms.dynamicOffset);
               }
               transientCommandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, bindings.pipelineLayout, bindings.setIndex, { descriptorSet }, dynamicOffsets);
+            },
+            [&](legit::Buffer *indirectBuf)
+            {
+              AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(indirectBuf, BufferUsageTypes::DispatchIndirect));
+              transientCommandBuffer.dispatchIndirect(indirectBuf->GetHandle(), 0);
             });
 
             passContext.commandBuffer = transientCommandBuffer;
