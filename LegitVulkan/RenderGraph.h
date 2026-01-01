@@ -716,6 +716,14 @@ namespace legit
       {
         dispatchIndirectFunc(indirectBuf);
       }
+      void DispatchThreads(glm::uvec3 threads_count, glm::uvec3 workgroup_size)
+      {
+        this->GetCommandBuffer().dispatch(
+          (threads_count.x + workgroup_size.x - 1u) / workgroup_size.x,
+          (threads_count.y + workgroup_size.y - 1u) / workgroup_size.y,
+          (threads_count.z + workgroup_size.z - 1u) / workgroup_size.z
+        );
+      }
       legit::RenderPass *GetRenderPass()
       {
         return renderPass;
