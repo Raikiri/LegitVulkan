@@ -79,7 +79,6 @@ namespace legit
       vk::PhysicalDevice physicalDevice,
       QueueFamilyIndices familyIndices,
       Span<const char*> deviceExtensions,
-      Span<const char*> validationLayers,
       vk::PhysicalDeviceFeatures physicalDeviceFeatures,
       void *physicalDeviceChainFeatures);
     static inline vk::Queue GetDeviceQueue(vk::Device logicalDevice, uint32_t queueFamilyIndex);

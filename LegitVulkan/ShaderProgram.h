@@ -38,7 +38,7 @@ namespace legit
   struct ImageSamplerBinding
   {
     ImageSamplerBinding() : imageView(nullptr), sampler(nullptr) {}
-    ImageSamplerBinding(legit::ImageView *_imageView, legit::Sampler *_sampler, uint32_t _shaderBindingId) : imageView(_imageView), sampler(_sampler), shaderBindingId(_shaderBindingId)
+    ImageSamplerBinding(const legit::ImageView *_imageView, const legit::Sampler *_sampler, uint32_t _shaderBindingId) : imageView(_imageView), sampler(_sampler), shaderBindingId(_shaderBindingId)
     {
       assert(_imageView);
       assert(_sampler);
@@ -47,15 +47,15 @@ namespace legit
     {
       return std::tie(imageView, sampler, shaderBindingId) < std::tie(other.imageView, other.sampler, other.shaderBindingId);
     }
-    legit::ImageView *imageView;
-    legit::Sampler *sampler;
+    const legit::ImageView *imageView;
+    const legit::Sampler *sampler;
     uint32_t shaderBindingId;
   };
 
   struct TextureBinding
   {
     TextureBinding() : imageView(nullptr) {}
-    TextureBinding(legit::ImageView *_imageView, uint32_t _shaderBindingId) : imageView(_imageView), shaderBindingId(_shaderBindingId)
+    TextureBinding(const legit::ImageView *_imageView, uint32_t _shaderBindingId) : imageView(_imageView), shaderBindingId(_shaderBindingId)
     {
       assert(_imageView);
     }
@@ -63,14 +63,14 @@ namespace legit
     {
       return std::tie(imageView, shaderBindingId) < std::tie(other.imageView, other.shaderBindingId);
     }
-    legit::ImageView *imageView;
+    const legit::ImageView *imageView;
     uint32_t shaderBindingId;
   };
 
   struct SamplerBinding
   {
     SamplerBinding() : sampler(nullptr) {}
-    SamplerBinding(legit::Sampler *_sampler, uint32_t _shaderBindingId) : sampler(_sampler), shaderBindingId(_shaderBindingId)
+    SamplerBinding(const legit::Sampler *_sampler, uint32_t _shaderBindingId) : sampler(_sampler), shaderBindingId(_shaderBindingId)
     {
       assert(_sampler);
     }
@@ -78,14 +78,14 @@ namespace legit
     {
       return std::tie(sampler, shaderBindingId) < std::tie(other.sampler, other.shaderBindingId);
     }
-    legit::Sampler *sampler;
+    const legit::Sampler *sampler;
     uint32_t shaderBindingId;
   };
 
   struct UniformBufferBinding
   {
     UniformBufferBinding() : buffer(nullptr), offset(-1), size(-1) {}
-    UniformBufferBinding(legit::Buffer *_buffer, uint32_t _shaderBindingId, vk::DeviceSize _offset, vk::DeviceSize _size) : buffer(_buffer), shaderBindingId(_shaderBindingId), offset(_offset), size(_size)
+    UniformBufferBinding(const legit::Buffer *_buffer, uint32_t _shaderBindingId, vk::DeviceSize _offset, vk::DeviceSize _size) : buffer(_buffer), shaderBindingId(_shaderBindingId), offset(_offset), size(_size)
     {
       assert(_buffer);
     }
@@ -93,7 +93,7 @@ namespace legit
     {
       return std::tie(buffer, shaderBindingId, offset, size) < std::tie(other.buffer, other.shaderBindingId, other.offset, other.size);
     }
-    legit::Buffer *buffer;
+    const legit::Buffer *buffer;
     uint32_t shaderBindingId;
     vk::DeviceSize offset;
     vk::DeviceSize size;
@@ -103,7 +103,7 @@ namespace legit
   {
     struct Descriptor
     {
-      legit::Buffer *buffer = nullptr;
+      const legit::Buffer *buffer = nullptr;
       vk::DeviceSize offset = vk::DeviceSize(-1);
       vk::DeviceSize size = vk::DeviceSize(-1);
       bool operator < (const Descriptor &other) const
@@ -113,7 +113,7 @@ namespace legit
     };
     
     StorageBufferBinding() {}
-    StorageBufferBinding(legit::Buffer *_buffer, uint32_t _shaderBindingId, vk::DeviceSize _offset, vk::DeviceSize _size) : shaderBindingId(_shaderBindingId)
+    StorageBufferBinding(const legit::Buffer *_buffer, uint32_t _shaderBindingId, vk::DeviceSize _offset, vk::DeviceSize _size) : shaderBindingId(_shaderBindingId)
     {
       assert(_buffer);
       Descriptor desc;
@@ -139,7 +139,7 @@ namespace legit
   struct StorageImageBinding
   {
     StorageImageBinding() : imageView(nullptr) {}
-    StorageImageBinding(legit::ImageView *_imageView, uint32_t _shaderBindingId) : imageView(_imageView), shaderBindingId(_shaderBindingId)
+    StorageImageBinding(const legit::ImageView *_imageView, uint32_t _shaderBindingId) : imageView(_imageView), shaderBindingId(_shaderBindingId)
     {
       assert(_imageView);
     }
@@ -147,14 +147,14 @@ namespace legit
     {
       return std::tie(imageView, shaderBindingId) < std::tie(other.imageView, other.shaderBindingId);
     }
-    legit::ImageView *imageView;
+    const legit::ImageView *imageView;
     uint32_t shaderBindingId;
   };
 
   struct AccelerationStructureBinding
   {
     AccelerationStructureBinding() : accelerationStructure(nullptr) {}
-    AccelerationStructureBinding(legit::AccelerationStructure *_accelerationStructure, uint32_t _shaderBindingId) : accelerationStructure(_accelerationStructure), shaderBindingId(_shaderBindingId)
+    AccelerationStructureBinding(const legit::AccelerationStructure *_accelerationStructure, uint32_t _shaderBindingId) : accelerationStructure(_accelerationStructure), shaderBindingId(_shaderBindingId)
     {
       assert(_accelerationStructure);
     }
@@ -162,7 +162,7 @@ namespace legit
     {
       return std::tie(accelerationStructure, shaderBindingId) < std::tie(other.accelerationStructure, other.shaderBindingId);
     }
-    legit::AccelerationStructure *accelerationStructure;
+    const legit::AccelerationStructure *accelerationStructure;
     uint32_t shaderBindingId;
   };
 
@@ -316,7 +316,7 @@ namespace legit
     {
       return uniformBufferDatum[uniformBufferId.id];
     }
-    UniformBufferBinding MakeUniformBufferBinding(std::string bufferName, legit::Buffer *_buffer, vk::DeviceSize _offset = 0, vk::DeviceSize _size = VK_WHOLE_SIZE) const
+    UniformBufferBinding MakeUniformBufferBinding(std::string bufferName, const legit::Buffer *_buffer, vk::DeviceSize _offset = 0, vk::DeviceSize _size = VK_WHOLE_SIZE) const
     {
       auto uniformBufferId = GetUniformBufferId(bufferName);
       assert(uniformBufferId.IsValid());
@@ -356,7 +356,7 @@ namespace legit
       return storageBufferDatum[storageBufferId.id];
     }
 
-    StorageBufferBinding MakeStorageBufferBinding(std::string bufferName, legit::Buffer *_buffer, vk::DeviceSize _offset = 0, vk::DeviceSize _size = VK_WHOLE_SIZE) const
+    StorageBufferBinding MakeStorageBufferBinding(std::string bufferName, const legit::Buffer *_buffer, vk::DeviceSize _offset = 0, vk::DeviceSize _size = VK_WHOLE_SIZE) const
     {
       auto storageBufferId = GetStorageBufferId(bufferName);
       assert(storageBufferId.IsValid());
@@ -364,7 +364,7 @@ namespace legit
       return StorageBufferBinding(_buffer, storageBufferInfo.shaderBindingIndex, _offset, _size);
     }
 
-    StorageBufferBinding MakeStorageBufferBinding(std::string bufferName, std::vector<legit::Buffer*> _buffers) const
+    StorageBufferBinding MakeStorageBufferBinding(std::string bufferName, std::vector<const legit::Buffer*> _buffers) const
     {
       auto storageBufferId = GetStorageBufferId(bufferName);
       assert(storageBufferId.IsValid());
@@ -384,7 +384,7 @@ namespace legit
     }
     
     template<typename MemberType>
-    StorageBufferBinding MakeCheckedStorageBufferBinding(std::string bufferName, legit::Buffer* _buffer, vk::DeviceSize _offset = 0, vk::DeviceSize _size = VK_WHOLE_SIZE) const
+    StorageBufferBinding MakeCheckedStorageBufferBinding(std::string bufferName, const legit::Buffer* _buffer, vk::DeviceSize _offset = 0, vk::DeviceSize _size = VK_WHOLE_SIZE) const
     {
       auto storageBufferId = GetStorageBufferId(bufferName);
       assert(storageBufferId.IsValid());
@@ -511,21 +511,21 @@ namespace legit
       return it->second;
     }
     
-    ImageSamplerBinding MakeImageSamplerBinding(std::string imageSamplerName, legit::ImageView *_imageView, legit::Sampler *_sampler) const
+    ImageSamplerBinding MakeImageSamplerBinding(std::string imageSamplerName, const legit::ImageView *_imageView, const legit::Sampler *_sampler) const
     {
       auto imageSamplerId = GetImageSamplerId(imageSamplerName);
       assert(imageSamplerId.IsValid());
       auto imageSamplerInfo = GetImageSamplerInfo(imageSamplerId);
       return ImageSamplerBinding(_imageView, _sampler, imageSamplerInfo.shaderBindingIndex);
     }
-    TextureBinding MakeTextureBinding(std::string textureName, legit::ImageView *_imageView) const
+    TextureBinding MakeTextureBinding(std::string textureName, const legit::ImageView *_imageView) const
     {
       auto textureId = GetTextureId(textureName);
       assert(textureId.IsValid());
       auto textureInfo = GetTextureInfo(textureId);
       return TextureBinding(_imageView, textureInfo.shaderBindingIndex);
     }
-    SamplerBinding MakeSamplerBinding(std::string samplerName, legit::Sampler *_sampler) const
+    SamplerBinding MakeSamplerBinding(std::string samplerName, const legit::Sampler *_sampler) const
     {
       auto samplerId = GetSamplerId(samplerName);
       assert(samplerId.IsValid());
@@ -563,7 +563,7 @@ namespace legit
     {
       return storageImageDatum[storageImageId.id];
     }
-    StorageImageBinding MakeStorageImageBinding(std::string imageName, legit::ImageView *_imageView) const
+    StorageImageBinding MakeStorageImageBinding(std::string imageName, const legit::ImageView *_imageView) const
     {
       auto imageId = GetStorageImageId(imageName);
       assert(imageId.IsValid());
@@ -601,7 +601,7 @@ namespace legit
     {
       return accelerationStructureDatum[accelerationStructureId.id];
     }
-    AccelerationStructureBinding MakeAccelerationStructureBinding(std::string accelerationStructureName, legit::AccelerationStructure *_accelerationStructure) const
+    AccelerationStructureBinding MakeAccelerationStructureBinding(std::string accelerationStructureName, const legit::AccelerationStructure *_accelerationStructure) const
     {
       auto accelerationStructureId = GetAccelerationStructureId(accelerationStructureName);
       assert(accelerationStructureId.IsValid());

@@ -3,7 +3,7 @@ namespace legit
   class Framebuffer
   {
   public:
-    vk::Framebuffer GetHandle()
+    vk::Framebuffer GetHandle() const
     {
       return framebuffer.get();
     }

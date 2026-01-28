@@ -20,8 +20,8 @@ namespace legit
     }
     glm::uvec3 GetBaseSize() {return glm::uvec3(imageCreateInfo.extent.width, imageCreateInfo.extent.height, imageCreateInfo.extent.depth);}
     legit::Image *GetImage() {return image.get();}
-    legit::ImageView *GetImageView() {return imageView.get();}
-    legit::ImageView *GetMipImageView(uint32_t mipLevel){return mipImageViews[mipLevel].get();};
+    const legit::ImageView *GetImageView() const {return imageView.get();}
+    const legit::ImageView *GetMipImageView(uint32_t mipLevel) const{return mipImageViews[mipLevel].get();};
     size_t GetMipsCount(){return mipImageViews.size();}
   private:
     void CreateImageViews(legit::Core *core, vk::ImageCreateInfo imageCreateInfo, std::string debugName)

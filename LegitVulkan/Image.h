@@ -57,7 +57,7 @@ namespace legit
     {
       return imageType;
     }
-    glm::uvec3 GetMipSize(uint32_t mipLevel)
+    glm::uvec3 GetMipSize(uint32_t mipLevel) const
     {
       return mipInfos[mipLevel].size;
     }
@@ -65,15 +65,15 @@ namespace legit
     {
       return aspectFlags;
     }
-    uint32_t GetArrayLayersCount()
+    uint32_t GetArrayLayersCount() const
     {
       return arrayLayersCount;
     }
-    uint32_t GetMipsCount()
+    uint32_t GetMipsCount() const
     {
       return mipsCount;
     }
-    ImageUsageTypes GetSubresourceBaseUsageType(uint32_t mipLevel, uint32_t arrayLayer)
+    ImageUsageTypes GetSubresourceBaseUsageType(uint32_t mipLevel, uint32_t arrayLayer) const
     {
       return mipInfos[mipLevel].layerInfos[arrayLayer].baseUsageType;
     }

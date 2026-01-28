@@ -598,37 +598,37 @@ namespace legit
           pipelineLayout(pipelineInfo.pipelineLayout)
         {
         }
-        DescriptorSetBindings &AddImageSamplerBinding(std::string name, legit::ImageView *imageView, legit::Sampler *sampler)
+        DescriptorSetBindings &AddImageSamplerBinding(std::string name, const legit::ImageView *imageView, legit::Sampler *sampler)
         {
           imageSamplerBindings.push_back(shaderDataSetInfo->MakeImageSamplerBinding(name, imageView, sampler));
           return *this;
         }
-        DescriptorSetBindings &AddTextureBinding(std::string name, legit::ImageView *imageView)
+        DescriptorSetBindings &AddTextureBinding(std::string name, const legit::ImageView *imageView)
         {
           textureBindings.push_back(shaderDataSetInfo->MakeTextureBinding(name, imageView));
           return *this;
         }
-        DescriptorSetBindings &AddSamplerBinding(std::string name, legit::Sampler *sampler)
+        DescriptorSetBindings &AddSamplerBinding(std::string name, const legit::Sampler *sampler)
         {
           samplerBindings.push_back(shaderDataSetInfo->MakeSamplerBinding(name, sampler));
           return *this;
         }
-        DescriptorSetBindings &AddStorageImageBinding(std::string name, legit::ImageView *imageView)
+        DescriptorSetBindings &AddStorageImageBinding(std::string name, const legit::ImageView *imageView)
         {
           storageImageBindings.push_back(shaderDataSetInfo->MakeStorageImageBinding(name, imageView));
           return *this;
         }
-        DescriptorSetBindings &AddStorageBufferBinding(std::string name, legit::Buffer *buffer)
+        DescriptorSetBindings &AddStorageBufferBinding(std::string name, const legit::Buffer *buffer)
         {
           storageBufferBindings.push_back(shaderDataSetInfo->MakeStorageBufferBinding(name, buffer));
           return *this;
         }
-        DescriptorSetBindings &AddStorageBufferBinding(std::string name, std::vector<legit::Buffer*> buffers)
+        DescriptorSetBindings &AddStorageBufferBinding(std::string name, std::vector<const legit::Buffer*> buffers)
         {
           storageBufferBindings.push_back(shaderDataSetInfo->MakeStorageBufferBinding(name, buffers));
           return *this;
         }
-        DescriptorSetBindings &AddAccelerationStructureBinding(std::string name, legit::AccelerationStructure *accelerationStructure)
+        DescriptorSetBindings &AddAccelerationStructureBinding(std::string name, const legit::AccelerationStructure *accelerationStructure)
         {
           accelerationStructureBindings.push_back(shaderDataSetInfo->MakeAccelerationStructureBinding(name, accelerationStructure));
           return *this;
@@ -743,12 +743,12 @@ namespace legit
       }
       struct Attachment
       {
-        ImageView *imageView = nullptr;
+        const ImageView *imageView = nullptr;
         vk::AttachmentLoadOp loadOp;
         vk::ClearValue clearValue;
       };
       RenderPassDesc2 &SetColorAttachments(
-        const std::vector<ImageView*> _colorAttachments, 
+        const std::vector<const ImageView*> _colorAttachments, 
         vk::AttachmentLoadOp _loadOp = vk::AttachmentLoadOp::eDontCare, 
         vk::ClearValue _clearValue = vk::ClearColorValue(std::array<float, 4>{1.0f, 0.5f, 0.0f, 1.0f}))
       {
@@ -766,7 +766,7 @@ namespace legit
       }
 
       RenderPassDesc2 &SetDepthAttachment(
-        ImageView *_depthAttachmentView,
+        const ImageView *_depthAttachmentView,
         vk::AttachmentLoadOp _loadOp = vk::AttachmentLoadOp::eDontCare,
         vk::ClearValue _clearValue = vk::ClearDepthStencilValue(1.0f, 0))
       {
@@ -1300,7 +1300,7 @@ namespace legit
                 { descriptorSet },
                 dynamicOffsets);
             },
-            [&](legit::Buffer *indirectBuf)
+            [&](const legit::Buffer *indirectBuf)
             {
               AppendVectors(bufferBarriers, stateTracker.TransitionBufferAndCreateBarriers(indirectBuf, BufferUsageTypes::DrawIndirect));
               transientCommandBuffer.drawIndirect(indirectBuf->GetHandle(), 0, 1, sizeof(uint32_t) * 4);
@@ -1661,7 +1661,7 @@ namespace legit
     
   private:
 
-    bool ImageViewContainsSubresource(legit::ImageView *imageView, legit::ImageData *imageData, uint32_t mipLevel, uint32_t arrayLayer)
+    bool ImageViewContainsSubresource(const legit::ImageView *imageView, const legit::ImageData *imageData, uint32_t mipLevel, uint32_t arrayLayer)
     {
       return (
         imageView->GetImageData() == imageData &&
@@ -1669,7 +1669,7 @@ namespace legit
         mipLevel >= imageView->GetBaseMipLevel() && mipLevel < imageView->GetBaseMipLevel() + imageView->GetMipLevelsCount());
     }
 
-    ImageUsageTypes GetTaskImageSubresourceUsageType(size_t taskIndex, legit::ImageData *imageData, uint32_t mipLevel, uint32_t arrayLayer)
+    ImageUsageTypes GetTaskImageSubresourceUsageType(size_t taskIndex, const legit::ImageData *imageData, uint32_t mipLevel, uint32_t arrayLayer)
     {
       Task &task = tasks[taskIndex];
       switch (task.type)
@@ -1740,7 +1740,7 @@ namespace legit
     }
 
     
-    BufferUsageTypes GetTaskBufferUsageType(size_t taskIndex, legit::Buffer *buffer)
+    BufferUsageTypes GetTaskBufferUsageType(size_t taskIndex, const legit::Buffer *buffer)
     {
       Task &task = tasks[taskIndex];
       switch (task.type)
@@ -1793,7 +1793,7 @@ namespace legit
       return BufferUsageTypes::None;
     }
 
-    ImageUsageTypes GetLastImageSubresourceUsageType(size_t taskIndex, legit::ImageData *imageData, uint32_t mipLevel, uint32_t arrayLayer)
+    ImageUsageTypes GetLastImageSubresourceUsageType(size_t taskIndex, const legit::ImageData *imageData, uint32_t mipLevel, uint32_t arrayLayer)
     {
       for (size_t taskOffset = 0; taskOffset < taskIndex; taskOffset++)
       {
@@ -1831,7 +1831,7 @@ namespace legit
       return ImageUsageTypes::Undefined;
     }*/
 
-    BufferUsageTypes GetLastBufferUsageType(size_t taskIndex, legit::Buffer *buffer)
+    BufferUsageTypes GetLastBufferUsageType(size_t taskIndex, const legit::Buffer *buffer)
     {
       for (size_t taskOffset = 1; taskOffset < taskIndex; taskOffset++)
       {
@@ -1854,7 +1854,7 @@ namespace legit
       return BufferUsageTypes::Undefined;
     }*/
 
-    void FlushImageTransitionBarriers(legit::ImageData *imageData, vk::ImageSubresourceRange range, ImageUsageTypes srcUsageType, ImageUsageTypes dstUsageType, vk::PipelineStageFlags &srcStage, vk::PipelineStageFlags &dstStage, std::vector<vk::ImageMemoryBarrier> &imageBarriers)
+    void FlushImageTransitionBarriers(const legit::ImageData *imageData, vk::ImageSubresourceRange range, ImageUsageTypes srcUsageType, ImageUsageTypes dstUsageType, vk::PipelineStageFlags &srcStage, vk::PipelineStageFlags &dstStage, std::vector<vk::ImageMemoryBarrier> &imageBarriers)
     {
       if (
         IsImageBarrierNeeded(srcUsageType, dstUsageType) &&
@@ -1894,7 +1894,7 @@ namespace legit
       }
     }
 
-    void AddImageTransitionBarriers(legit::ImageView *imageView, ImageUsageTypes dstUsageType, size_t dstTaskIndex, vk::PipelineStageFlags &srcStage, vk::PipelineStageFlags &dstStage, std::vector<vk::ImageMemoryBarrier> &imageBarriers)
+    void AddImageTransitionBarriers(const legit::ImageView *imageView, ImageUsageTypes dstUsageType, size_t dstTaskIndex, vk::PipelineStageFlags &srcStage, vk::PipelineStageFlags &dstStage, std::vector<vk::ImageMemoryBarrier> &imageBarriers)
     {
       auto range = vk::ImageSubresourceRange()
         .setAspectMask(imageView->GetImageData()->GetAspectFlags());
@@ -1926,7 +1926,7 @@ namespace legit
     }
 
 
-    void FlushBufferTransitionBarriers(legit::Buffer *buffer, BufferUsageTypes srcUsageType, BufferUsageTypes dstUsageType, vk::PipelineStageFlags &srcStage, vk::PipelineStageFlags &dstStage, std::vector<vk::BufferMemoryBarrier> &bufferBarriers)
+    void FlushBufferTransitionBarriers(const legit::Buffer *buffer, BufferUsageTypes srcUsageType, BufferUsageTypes dstUsageType, vk::PipelineStageFlags &srcStage, vk::PipelineStageFlags &dstStage, std::vector<vk::BufferMemoryBarrier> &bufferBarriers)
     {
       if (IsBufferBarrierNeeded(srcUsageType, dstUsageType))
       {
@@ -1960,7 +1960,7 @@ namespace legit
       }
     }
 
-    void AddBufferBarriers(legit::Buffer *buffer, BufferUsageTypes dstUsageType, size_t dstTaskIndex, vk::PipelineStageFlags &srcStage, vk::PipelineStageFlags &dstStage, std::vector<vk::BufferMemoryBarrier> &bufferBarriers)
+    void AddBufferBarriers(const legit::Buffer *buffer, BufferUsageTypes dstUsageType, size_t dstTaskIndex, vk::PipelineStageFlags &srcStage, vk::PipelineStageFlags &dstStage, std::vector<vk::BufferMemoryBarrier> &bufferBarriers)
     {
       auto lastUsageType = GetLastBufferUsageType(dstTaskIndex, buffer);
       FlushBufferTransitionBarriers(buffer, lastUsageType, dstUsageType, srcStage, dstStage, bufferBarriers);

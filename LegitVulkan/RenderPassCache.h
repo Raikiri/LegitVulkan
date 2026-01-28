@@ -42,8 +42,8 @@ namespace legit
   public:
     struct PassInfo
     {
-      legit::Framebuffer *framebuffer;
-      legit::RenderPass *renderPass;
+      const legit::Framebuffer *framebuffer;
+      const legit::RenderPass *renderPass;
       
       vk::Viewport viewport;
       vk::Rect2D scissorRect;
@@ -51,7 +51,7 @@ namespace legit
 
     struct Attachment
     {
-      legit::ImageView *imageView;
+      const legit::ImageView *imageView;
       vk::ClearValue clearValue;
     };
 

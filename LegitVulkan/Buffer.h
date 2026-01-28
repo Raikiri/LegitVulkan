@@ -18,19 +18,19 @@ namespace legit
   class Buffer
   {
   public:
-    vk::Buffer GetHandle()
+    vk::Buffer GetHandle() const
     {
       return bufferHandle.get();
     }
-    vk::DeviceMemory GetMemory()
+    vk::DeviceMemory GetMemory() const
     {
       return bufferMemory.get();
     }
-    void *Map()
+    void *Map() const
     {
       return logicalDevice.mapMemory(GetMemory(), 0, size);
     }
-    void Unmap()
+    void Unmap() const
     {
       logicalDevice.unmapMemory(GetMemory());
     }
@@ -59,7 +59,7 @@ namespace legit
 
       logicalDevice.bindBufferMemory(bufferHandle.get(), bufferMemory.get(), 0);
     }
-    vk::DeviceAddress GetDeviceAddress()
+    vk::DeviceAddress GetDeviceAddress() const
     {
       auto deviceAddressInfo = vk::BufferDeviceAddressInfo()
         .setBuffer(bufferHandle.get());

@@ -5,7 +5,7 @@ namespace legit
   {
     struct ImageSubresource
     {
-      legit::ImageData *imageData;
+      const legit::ImageData *imageData;
       uint32_t mipLevel;
       uint32_t arrayLayer;
       bool operator < (const ImageSubresource &other) const
@@ -21,7 +21,7 @@ namespace legit
       vk::PipelineStageFlags dstStage;
     };
     static std::optional<ImageBarrier> CreateImageBarrierIfNeeded(
-      legit::ImageData *imageData,
+      const legit::ImageData *imageData,
       vk::ImageSubresourceRange range,
       ImageUsageTypes srcUsageType,
       ImageUsageTypes dstUsageType)
@@ -87,11 +87,11 @@ namespace legit
       return baseUsage;
     }
     
-    std::vector<ImageBarrier> TransitionImageAndCreateBarriers(legit::ImageView *imageView, ImageUsageTypes dstUsageType)
+    std::vector<ImageBarrier> TransitionImageAndCreateBarriers(const legit::ImageView *imageView, ImageUsageTypes dstUsageType)
     {
       auto range = vk::ImageSubresourceRange()
         .setAspectMask(imageView->GetImageData()->GetAspectFlags());
-      legit::ImageData *imageData = imageView->GetImageData();
+      const legit::ImageData *imageData = imageView->GetImageData();
       std::vector<ImageBarrier> barriers;
       
       for (uint32_t arrayLayer = imageView->GetBaseArrayLayer(); arrayLayer < imageView->GetBaseArrayLayer() + imageView->GetArrayLayersCount(); arrayLayer++)
@@ -135,7 +135,7 @@ namespace legit
       vk::PipelineStageFlags dstStage;
     };
     
-    static std::optional<BufferBarrier> CreateBufferBufferBarrierIfNeeded(legit::Buffer *buffer, BufferUsageTypes srcUsageType, BufferUsageTypes dstUsageType)
+    static std::optional<BufferBarrier> CreateBufferBufferBarrierIfNeeded(const legit::Buffer *buffer, BufferUsageTypes srcUsageType, BufferUsageTypes dstUsageType)
     {
       if (IsBufferBarrierNeeded(srcUsageType, dstUsageType))
       {
@@ -172,7 +172,7 @@ namespace legit
       return {};
     }
     
-    legit::BufferUsageTypes TransitionBuffer(legit::Buffer *buffer, BufferUsageTypes newUsageType)
+    legit::BufferUsageTypes TransitionBuffer(const legit::Buffer *buffer, BufferUsageTypes newUsageType)
     {
       auto it = bufferToCurrUsage.find(buffer);
       if(it != bufferToCurrUsage.end())
@@ -186,7 +186,7 @@ namespace legit
       return baseUsage;
     }
 
-    std::vector<BufferBarrier> TransitionBufferAndCreateBarriers(legit::Buffer *buffer, BufferUsageTypes dstUsageType)
+    std::vector<BufferBarrier> TransitionBufferAndCreateBarriers(const legit::Buffer *buffer, BufferUsageTypes dstUsageType)
     {
       auto lastUsageType = TransitionBuffer(buffer, dstUsageType);
       std::vector<BufferBarrier> bufferBarriers;
@@ -199,6 +199,6 @@ namespace legit
 
     
     std::map<ImageSubresource, legit::ImageUsageTypes> imgSubresourceToCurrUsage;
-    std::map<legit::Buffer*, legit::BufferUsageTypes> bufferToCurrUsage;
+    std::map<const legit::Buffer*, legit::BufferUsageTypes> bufferToCurrUsage;
   };
 }

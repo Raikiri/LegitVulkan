@@ -10,19 +10,15 @@ namespace legit
     {
       return imageView.get();
     }
-    legit::ImageData *GetImageData()
-    {
-      return imageData;
-    }
     const legit::ImageData *GetImageData() const
     {
       return imageData;
     }
-    uint32_t GetBaseMipLevel() { return baseMipLevel; }
-    uint32_t GetMipLevelsCount() { return mipLevelsCount; }
-    uint32_t GetBaseArrayLayer() { return baseArrayLayer; }
-    uint32_t GetArrayLayersCount() { return arrayLayersCount; }
-    glm::uvec3 GetBaseSize() { return GetImageData()->GetMipSize(GetBaseMipLevel());}
+    uint32_t GetBaseMipLevel() const { return baseMipLevel; }
+    uint32_t GetMipLevelsCount() const { return mipLevelsCount; }
+    uint32_t GetBaseArrayLayer() const { return baseArrayLayer; }
+    uint32_t GetArrayLayersCount() const { return arrayLayersCount; }
+    glm::uvec3 GetBaseSize() const { return GetImageData()->GetMipSize(GetBaseMipLevel());}
     ImageView(vk::Device logicalDevice, legit::ImageData *imageData, uint32_t baseMipLevel, uint32_t mipLevelsCount, uint32_t baseArrayLayer, uint32_t arrayLayersCount)
     {
       this->imageData = imageData;

@@ -153,7 +153,6 @@ namespace legit
       physicalDevice,
       queueFamilyIndices,
       resDeviceExtensions,
-      validationLayers,
       physicalDeviceFeatures,
       physicalDeviceChainFeatures);
 
@@ -368,7 +367,6 @@ namespace legit
     vk::PhysicalDevice physicalDevice,
     QueueFamilyIndices familyIndices,
     Span<const char*> deviceExtensions,
-    Span<const char*> validationLayers,
     vk::PhysicalDeviceFeatures physicalDeviceFeatures,
     void *physicalDeviceChainFeatures
   )
@@ -391,7 +389,6 @@ namespace legit
       .setPQueueCreateInfos(queueCreateInfos.data())
       .setPEnabledFeatures(&physicalDeviceFeatures)
       .setPEnabledExtensionNames(deviceExtensions)
-      .setPEnabledLayerNames(validationLayers)
       .setPNext(physicalDeviceChainFeatures);
 
     return physicalDevice.createDeviceUnique(deviceCreateInfo);
