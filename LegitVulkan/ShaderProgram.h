@@ -59,7 +59,7 @@ namespace legit
     {
       assert(_imageView);
     }
-    bool operator < (const ImageSamplerBinding &other) const
+    bool operator < (const TextureBinding &other) const
     {
       return std::tie(imageView, shaderBindingId) < std::tie(other.imageView, other.shaderBindingId);
     }
@@ -74,7 +74,7 @@ namespace legit
     {
       assert(_sampler);
     }
-    bool operator < (const ImageSamplerBinding &other) const
+    bool operator < (const SamplerBinding &other) const
     {
       return std::tie(sampler, shaderBindingId) < std::tie(other.sampler, other.shaderBindingId);
     }

@@ -476,8 +476,24 @@ namespace legit
       bool operator < (const DescriptorSetKey &other) const
       {
         return
-          std::tie(layout, bindings.uniformBufferBindings, bindings.storageBufferBindings, bindings.storageImageBindings, bindings.imageSamplerBindings) <
-          std::tie(other.layout, other.bindings.uniformBufferBindings, other.bindings.storageBufferBindings, other.bindings.storageImageBindings, other.bindings.imageSamplerBindings);
+          std::tie(
+            layout,
+            bindings.uniformBufferBindings,
+            bindings.imageSamplerBindings,
+            bindings.textureBindings,
+            bindings.samplerBindings,
+            bindings.storageBufferBindings,
+            bindings.storageImageBindings,
+            bindings.accelerationStructureBindings) <
+          std::tie(
+            other.layout,
+            other.bindings.uniformBufferBindings,
+            other.bindings.imageSamplerBindings,
+            other.bindings.textureBindings,
+            other.bindings.samplerBindings,
+            other.bindings.storageBufferBindings,
+            other.bindings.storageImageBindings,
+            other.bindings.accelerationStructureBindings);
       }
     };
     std::map<legit::DescriptorSetLayoutKey, vk::UniqueDescriptorSetLayout> descriptorSetLayoutCache;
