@@ -104,6 +104,16 @@ namespace legit
     {
       validationLayers.push_back("VK_LAYER_KHRONOS_validation");
     }
+    
+    bool enableRaytracing = false;
+    for(const auto &extension : deviceExtensions)
+    {
+      if(extension == "VK_KHR_acceleration_structure")
+      {
+        enableRaytracing = true;
+        break;
+      }
+    }
 
     std::vector<const char*> resDeviceExtensions = GetCStrArray(deviceExtensions);
     resDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
@@ -161,7 +171,7 @@ namespace legit
     this->presentQueue = GetDeviceQueue(logicalDevice.get(), queueFamilyIndices.presentFamilyIndex);
     this->commandPool = CreateCommandPool(logicalDevice.get(), queueFamilyIndices.graphicsFamilyIndex);
 
-    this->descriptorSetCache.reset(new legit::DescriptorSetCache(logicalDevice.get()));
+    this->descriptorSetCache.reset(new legit::DescriptorSetCache(logicalDevice.get(), enableRaytracing));
     this->pipelineCache.reset(new legit::PipelineCache(logicalDevice.get(), this->descriptorSetCache.get()));
 
     this->renderGraph.reset(new legit::RenderGraph(physicalDevice, logicalDevice.get(), loader));

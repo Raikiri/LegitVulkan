@@ -49,7 +49,7 @@ namespace legit
   class DescriptorSetCache
   {
   public:
-    DescriptorSetCache(vk::Device _logicalDevice) :
+    DescriptorSetCache(vk::Device _logicalDevice, bool enableRaytracing) :
       logicalDevice(_logicalDevice)
     {
       std::vector<vk::DescriptorPoolSize> poolSizes;
@@ -83,10 +83,13 @@ namespace legit
         .setType(vk::DescriptorType::eStorageImage);
       poolSizes.push_back(storageImagePoolSize);
 
-      auto accelerationStructurePoolSize = vk::DescriptorPoolSize()
-        .setDescriptorCount(1000)
-        .setType(vk::DescriptorType::eAccelerationStructureKHR);
-      poolSizes.push_back(accelerationStructurePoolSize);
+      if(enableRaytracing)
+      {
+        auto accelerationStructurePoolSize = vk::DescriptorPoolSize()
+          .setDescriptorCount(1000)
+          .setType(vk::DescriptorType::eAccelerationStructureKHR);
+        poolSizes.push_back(accelerationStructurePoolSize);
+      }
 
       auto poolCreateInfo = vk::DescriptorPoolCreateInfo()
         .setMaxSets(1000)
