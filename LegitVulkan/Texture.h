@@ -22,7 +22,7 @@ namespace legit
     legit::Image *GetImage() {return image.get();}
     const legit::ImageView *GetImageView() const {return imageView.get();}
     const legit::ImageView *GetMipImageView(uint32_t mipLevel) const{return mipImageViews[mipLevel].get();};
-    size_t GetMipsCount(){return mipImageViews.size();}
+    size_t GetMipsCount() const{return mipImageViews.size();}
   private:
     void CreateImageViews(legit::Core *core, vk::ImageCreateInfo imageCreateInfo, std::string debugName)
     {
