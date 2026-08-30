@@ -91,16 +91,18 @@ namespace legit
       this->arrayLayersCount = arrayLayersCount;
       this->imageType = imageType;
 
-      glm::vec3 currSize = size;
+      glm::uvec3 currSize = size;
 
       for (size_t mipLevel = 0; mipLevel < mipsCount; mipLevel++)
       {
         MipInfo mipInfo;
+        assert(currSize.x > 0 && currSize.y > 0 && currSize.z > 0);
         mipInfo.size = currSize;
-        currSize.x /= 2;
-        if (imageType == vk::ImageType::e2D || imageType == vk::ImageType::e3D)
+        if(currSize.x > 1)
+          currSize.x /= 2;
+        if ((imageType == vk::ImageType::e2D || imageType == vk::ImageType::e3D) && currSize.y > 1)
           currSize.y /= 2;
-        if (imageType == vk::ImageType::e3D)
+        if ((imageType == vk::ImageType::e3D) && currSize.z > 1)
           currSize.z /= 2;
 
         mipInfo.layerInfos.resize(arrayLayersCount);
@@ -110,7 +112,6 @@ namespace legit
         }
         mipInfos.push_back(mipInfo);
       }
-
       if (legit::IsDepthFormat(format))
         this->aspectFlags = vk::ImageAspectFlagBits::eDepth;// | vk::ImageAspectFlagBits::eStencil;
       else
@@ -180,6 +181,7 @@ namespace legit
     {
       if(baseSize.x > 1u) baseSize.x /= 2u;
       if(baseSize.y > 1u) baseSize.y /= 2u;
+      assert(baseSize.x > 0 && baseSize.y > 0);
       count++;
     }
     return count;
